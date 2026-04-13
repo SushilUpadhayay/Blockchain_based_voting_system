@@ -1,7 +1,7 @@
 import { ethers } from 'ethers';
 import abi from './frontend/src/utils/abi.json';
 
-const CONTRACT_ADDRESS = "0x2Bb6e0fc99a8dc36971eBBa4b8e8BE21bFa1960e"; // REPLACE THIS
+const CONTRACT_ADDRESS = "0x2Bb6e0fc99a8dc36971eBBa4b8e8BE21bFa1960e";
 const CONTRACT_ABI = abi;
 
 async function initializeVotingContract() {

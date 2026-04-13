@@ -26,6 +26,16 @@ export const VotingProvider = ({ children }) => {
 
     const provider = new BrowserProvider(window.ethereum);
     const signer = await provider.getSigner();
+    const network = await provider.getNetwork();
+    
+    // Check if contract is deployed
+    const code = await provider.getCode(CONTRACT_ADDRESS);
+    if (code === "0x") {
+      toast.error(`Contract not found at ${CONTRACT_ADDRESS.slice(0,6)}... on chain ${network.chainId}. Please check MetaMask network!`);
+      console.error(`No contract deployed! Connected to chain: ${network.chainId}, expected Ganache.`);
+      return null;
+    }
+
     return new Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
   };
 
@@ -37,18 +47,29 @@ export const VotingProvider = ({ children }) => {
       const contract = await getContract();
       if (!contract) return;
 
-      // 🔥 SAFE CALLS (avoid crash if contract mismatch)
-      const status = await contract.getElectionStatus();
-      setElectionStatus({
-        active: status[0],
-        started: status[1],
-      });
+      try {
+        const status = await contract.getElectionStatus();
+        setElectionStatus({
+          active: status[0],
+          started: status[1],
+        });
+      } catch (e) {
+        console.error("Error loading election status:", e);
+      }
 
-      const adminAddress = await contract.admin();
-      setIsAdmin(adminAddress.toLowerCase() === account.toLowerCase());
+      try {
+        const adminAddress = await contract.admin();
+        setIsAdmin(adminAddress.toLowerCase() === account.toLowerCase());
+      } catch (e) {
+        console.error("Error loading admin:", e);
+      }
 
-      const voted = await contract.hasVoted(account);
-      setHasVoted(voted);
+      try {
+        const voted = await contract.hasVoted(account);
+        setHasVoted(voted);
+      } catch (e) {
+        console.error("Error checking vote status:", e);
+      }
 
       await loadCandidates(contract);
 
