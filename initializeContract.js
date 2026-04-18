@@ -1,7 +1,7 @@
 import { ethers } from 'ethers';
 import abi from './frontend/src/utils/abi.json';
 
-const CONTRACT_ADDRESS = "0x2Bb6e0fc99a8dc36971eBBa4b8e8BE21bFa1960e";
+const CONTRACT_ADDRESS = "0xd9145CCE52D386f254917e481eB44e9943F39138";
 const CONTRACT_ABI = abi;
 
 async function initializeVotingContract() {
@@ -61,6 +61,6 @@ async function initializeVotingContract() {
     console.error("❌ Error during initialization:", error);
   }
 }
-
+console.log("CONTRACT ADDRESS:", CONTRACT_ADDRESS);
 // To run this in the browser console, you would uncomment the line below:
 initializeVotingContract();

@@ -17,7 +17,6 @@ export const VotingProvider = ({ children }) => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [hasVoted, setHasVoted] = useState(false);
 
-  // ✅ Get contract instance
   const getContract = async () => {
     if (!window.ethereum) {
       toast.error("Please install MetaMask");
@@ -27,11 +26,11 @@ export const VotingProvider = ({ children }) => {
     const provider = new BrowserProvider(window.ethereum);
     const signer = await provider.getSigner();
     const network = await provider.getNetwork();
-    
+
     // Check if contract is deployed
     const code = await provider.getCode(CONTRACT_ADDRESS);
     if (code === "0x") {
-      toast.error(`Contract not found at ${CONTRACT_ADDRESS.slice(0,6)}... on chain ${network.chainId}. Please check MetaMask network!`);
+      toast.error(`Contract not found at ${CONTRACT_ADDRESS.slice(0, 6)}... on chain ${network.chainId}. Please check MetaMask network!`);
       console.error(`No contract deployed! Connected to chain: ${network.chainId}, expected Ganache.`);
       return null;
     }
@@ -39,7 +38,7 @@ export const VotingProvider = ({ children }) => {
     return new Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
   };
 
-  // ✅ Load all blockchain data
+  // Load all blockchain data
   const loadInitialData = async (account) => {
     try {
       setIsLoading(true);
@@ -80,7 +79,7 @@ export const VotingProvider = ({ children }) => {
     }
   };
 
-  // ✅ Load candidates
+  // Load candidates
   const loadCandidates = async (contractInstance) => {
     try {
       const contract = contractInstance || await getContract();
@@ -101,7 +100,7 @@ export const VotingProvider = ({ children }) => {
     }
   };
 
-  // ✅ Connect wallet manually
+  // Connect wallet manually
   const connectWallet = async () => {
     try {
       if (!window.ethereum) {
@@ -121,7 +120,7 @@ export const VotingProvider = ({ children }) => {
     }
   };
 
-  // ✅ Auto check connection
+  // Auto check connection
   const checkIfWalletIsConnected = async () => {
     try {
       if (!window.ethereum) return;
@@ -140,7 +139,7 @@ export const VotingProvider = ({ children }) => {
     }
   };
 
-  // ✅ Vote function
+  // Vote function
   const vote = async (candidateId) => {
     try {
       setIsLoading(true);
@@ -167,7 +166,7 @@ export const VotingProvider = ({ children }) => {
     }
   };
 
-  // ✅ Lifecycle
+  // Lifecycle
   useEffect(() => {
     checkIfWalletIsConnected();
 

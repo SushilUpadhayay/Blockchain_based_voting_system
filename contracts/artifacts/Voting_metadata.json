@@ -363,7 +363,7 @@
 		"compilationTarget": {
 			"Voting.sol": "Voting"
 		},
-		"evmVersion": "prague",
+		"evmVersion": "paris",
 		"libraries": {},
 		"metadata": {
 			"bytecodeHash": "ipfs"
