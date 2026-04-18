@@ -1,111 +1,132 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useCallback,
+} from 'react';
 import { BrowserProvider, Contract } from 'ethers';
 import { CONTRACT_ABI, CONTRACT_ADDRESS } from '../utils/constants';
 import toast from 'react-hot-toast';
 
-console.log("Using contract:", CONTRACT_ADDRESS);
+// ── Network config (from .env) ──
+const REQUIRED_CHAIN_ID = Number(import.meta.env.VITE_CHAIN_ID ?? 31337);
+const RPC_URL = import.meta.env.VITE_RPC_URL ?? 'http://127.0.0.1:8545';
+const CHAIN_NAME = import.meta.env.VITE_CHAIN_NAME ?? 'Hardhat Local';
 
+// ── Context ──
 const VotingContext = createContext();
 
 export const useVoting = () => useContext(VotingContext);
 
 export const VotingProvider = ({ children }) => {
-  const [currentAccount, setCurrentAccount] = useState("");
+  const [currentAccount, setCurrentAccount] = useState('');
   const [candidates, setCandidates] = useState([]);
   const [electionStatus, setElectionStatus] = useState({ active: false, started: false });
   const [isLoading, setIsLoading] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [hasVoted, setHasVoted] = useState(false);
+  const [networkOk, setNetworkOk] = useState(true);
+  const [networkError, setNetworkError] = useState('');
+  const [contractFound, setContractFound] = useState(true);
 
-  const getContract = async () => {
+  // ── Helpers ─
+  const checkNetwork = useCallback(async (provider) => {
+    const network = await provider.getNetwork();
+    const currentChainId = Number(network.chainId);
+
+    if (currentChainId !== REQUIRED_CHAIN_ID) {
+      const msg =
+        `Wrong network detected (chainId: ${currentChainId}). ` +
+        `Please switch MetaMask to "${CHAIN_NAME}" ` +
+        `(RPC: ${RPC_URL}, Chain ID: ${REQUIRED_CHAIN_ID}).`;
+      setNetworkOk(false);
+      setNetworkError(msg);
+      toast.error(`Switch MetaMask to ${CHAIN_NAME} (chainId ${REQUIRED_CHAIN_ID})`, {
+        id: 'network',
+        duration: 6000,
+      });
+      return false;
+    }
+
+    setNetworkOk(true);
+    setNetworkError('');
+    return true;
+  }, []);
+  const getContract = useCallback(async () => {
     if (!window.ethereum) {
-      toast.error("Please install MetaMask");
+      toast.error('MetaMask not found. Please install MetaMask.');
       return null;
     }
 
     const provider = new BrowserProvider(window.ethereum);
-    const signer = await provider.getSigner();
-    const network = await provider.getNetwork();
 
-    // Check if contract is deployed
+    // Network guard
+    if (!(await checkNetwork(provider))) return null;
+
+    // Contract existence guard
     const code = await provider.getCode(CONTRACT_ADDRESS);
-    if (code === "0x") {
-      toast.error(`Contract not found at ${CONTRACT_ADDRESS.slice(0, 6)}... on chain ${network.chainId}. Please check MetaMask network!`);
-      console.error(`No contract deployed! Connected to chain: ${network.chainId}, expected Ganache.`);
+    if (code === '0x') {
+      const msg = `No contract at ${CONTRACT_ADDRESS.slice(0, 6)}…${CONTRACT_ADDRESS.slice(-4)}. Run deploy script first.`;
+      setContractFound(false);
+      toast.error(msg, { id: 'contract', duration: 8000 });
+      console.error('[VotingContext] Contract not found:', CONTRACT_ADDRESS);
       return null;
     }
 
+    setContractFound(true);
+    const signer = await provider.getSigner();
     return new Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
-  };
+  }, [checkNetwork]);
 
-  // Load all blockchain data
-  const loadInitialData = async (account) => {
+  // ── Data loaders ──
+
+  const loadCandidates = useCallback(async (contractInstance) => {
     try {
-      setIsLoading(true);
-
-      const contract = await getContract();
-      if (!contract) return;
-
-      try {
-        const status = await contract.getElectionStatus();
-        setElectionStatus({
-          active: status[0],
-          started: status[1],
-        });
-      } catch (e) {
-        console.error("Error loading election status:", e);
-      }
-
-      try {
-        const adminAddress = await contract.admin();
-        setIsAdmin(adminAddress.toLowerCase() === account.toLowerCase());
-      } catch (e) {
-        console.error("Error loading admin:", e);
-      }
-
-      try {
-        const voted = await contract.hasVoted(account);
-        setHasVoted(voted);
-      } catch (e) {
-        console.error("Error checking vote status:", e);
-      }
-
-      await loadCandidates(contract);
-
-    } catch (error) {
-      console.error("Failed to load initial data:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Load candidates
-  const loadCandidates = async (contractInstance) => {
-    try {
-      const contract = contractInstance || await getContract();
+      const contract = contractInstance ?? (await getContract());
       if (!contract) return;
 
       const data = await contract.getCandidates();
-
-      const parsed = data.map((c) => ({
-        id: Number(c.id),
-        name: c.name,
-        voteCount: Number(c.voteCount),
-      }));
-
-      setCandidates(parsed);
-
-    } catch (error) {
-      console.error("Failed to load candidates:", error);
+      setCandidates(
+        data.map((c) => ({
+          id: Number(c.id),
+          name: c.name,
+          voteCount: Number(c.voteCount),
+        }))
+      );
+    } catch (err) {
+      console.error('[VotingContext] loadCandidates failed:', err.message);
     }
-  };
+  }, [getContract]);
 
-  // Connect wallet manually
+  const loadInitialData = useCallback(async (account) => {
+    try {
+      setIsLoading(true);
+      const contract = await getContract();
+      if (!contract) return;
+
+      const [active, started] = await contract.getElectionStatus();
+      setElectionStatus({ active, started });
+
+      const adminAddr = await contract.admin();
+      setIsAdmin(adminAddr.toLowerCase() === account.toLowerCase());
+
+      // Vote status
+      const voted = await contract.hasVoted(account);
+      setHasVoted(voted);
+
+      await loadCandidates(contract);
+    } catch (err) {
+      console.error('[VotingContext] loadInitialData failed:', err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [getContract, loadCandidates]);
+
+  // ── Wallet ──
   const connectWallet = async () => {
     try {
-      if (!window.ethereum) {
-        return toast.error("Install MetaMask");
-      }
+      if (!window.ethereum) return toast.error('Install MetaMask first.');
 
       const accounts = await window.ethereum.request({
         method: 'eth_requestAccounts',
@@ -113,87 +134,197 @@ export const VotingProvider = ({ children }) => {
 
       setCurrentAccount(accounts[0]);
       await loadInitialData(accounts[0]);
-
-    } catch (error) {
-      console.error(error);
-      toast.error("Wallet connection failed");
+    } catch (err) {
+      console.error('[VotingContext] connectWallet error:', err);
+      toast.error('Wallet connection failed.');
     }
   };
 
-  // Auto check connection
-  const checkIfWalletIsConnected = async () => {
+  const checkIfWalletIsConnected = useCallback(async () => {
     try {
       if (!window.ethereum) return;
-
-      const accounts = await window.ethereum.request({
-        method: 'eth_accounts',
-      });
-
+      const accounts = await window.ethereum.request({ method: 'eth_accounts' });
       if (accounts.length > 0) {
         setCurrentAccount(accounts[0]);
         await loadInitialData(accounts[0]);
       }
-
-    } catch (error) {
-      console.error(error);
+    } catch (err) {
+      console.error('[VotingContext] checkIfWalletIsConnected error:', err);
     }
-  };
+  }, [loadInitialData]);
 
-  // Vote function
+  // ── Voter action ────
+
   const vote = async (candidateId) => {
+    const toastId = 'vote';
     try {
       setIsLoading(true);
-
       const contract = await getContract();
       if (!contract) return;
 
+      toast.loading('Submitting vote…', { id: toastId });
       const tx = await contract.vote(candidateId);
-
-      toast.loading("Voting...", { id: "vote" });
-
       await tx.wait();
 
-      toast.success("Vote successful!", { id: "vote" });
-
+      toast.success('Vote cast successfully!', { id: toastId });
       setHasVoted(true);
       await loadCandidates();
-
-    } catch (error) {
-      console.error(error);
-      toast.error(error.reason || "Vote failed");
+    } catch (err) {
+      console.error('[VotingContext] vote error:', err);
+      toast.error(err.reason ?? err.message ?? 'Vote failed.', { id: toastId });
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Lifecycle
+  // ── Admin actions ───
+
+  const addCandidate = async (name) => {
+    const toastId = 'addCandidate';
+    try {
+      setIsLoading(true);
+      const contract = await getContract();
+      if (!contract) return;
+
+      toast.loading(`Adding ${name}…`, { id: toastId });
+      const tx = await contract.addCandidate(name);
+      await tx.wait();
+
+      toast.success(`"${name}" added!`, { id: toastId });
+      await loadCandidates();
+    } catch (err) {
+      console.error('[VotingContext] addCandidate error:', err);
+      toast.error(err.reason ?? err.message ?? 'Failed to add candidate.', { id: toastId });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const authorizeVoter = async (voterAddress) => {
+    const toastId = 'authorizeVoter';
+    try {
+      setIsLoading(true);
+      const contract = await getContract();
+      if (!contract) return;
+
+      toast.loading('Authorizing voter…', { id: toastId });
+      const tx = await contract.authorizeVoter(voterAddress);
+      await tx.wait();
+
+      toast.success(`Voter authorized!`, { id: toastId });
+    } catch (err) {
+      console.error('[VotingContext] authorizeVoter error:', err);
+      toast.error(err.reason ?? err.message ?? 'Authorization failed.', { id: toastId });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const startElection = async () => {
+    const toastId = 'startElection';
+    try {
+      setIsLoading(true);
+      const contract = await getContract();
+      if (!contract) return;
+
+      toast.loading('Starting election…', { id: toastId });
+      const tx = await contract.startElection();
+      await tx.wait();
+
+      toast.success('Election is now ACTIVE!', { id: toastId });
+      setElectionStatus({ active: true, started: true });
+    } catch (err) {
+      console.error('[VotingContext] startElection error:', err);
+      toast.error(err.reason ?? err.message ?? 'Failed to start election.', { id: toastId });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const endElection = async () => {
+    const toastId = 'endElection';
+    try {
+      setIsLoading(true);
+      const contract = await getContract();
+      if (!contract) return;
+
+      toast.loading('Ending election…', { id: toastId });
+      const tx = await contract.endElection();
+      await tx.wait();
+
+      toast.success('Election ended.', { id: toastId });
+      setElectionStatus((prev) => ({ ...prev, active: false }));
+    } catch (err) {
+      console.error('[VotingContext] endElection error:', err);
+      toast.error(err.reason ?? err.message ?? 'Failed to end election.', { id: toastId });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // ── Lifecycle ──
+
   useEffect(() => {
     checkIfWalletIsConnected();
 
-    if (window.ethereum) {
-      window.ethereum.on("accountsChanged", (accounts) => {
-        if (accounts.length > 0) {
-          setCurrentAccount(accounts[0]);
-          loadInitialData(accounts[0]);
-        } else {
-          setCurrentAccount("");
-        }
-      });
-    }
-  }, []);
+    if (!window.ethereum) return;
+
+    const handleAccountsChanged = (accounts) => {
+      if (accounts.length > 0) {
+        setCurrentAccount(accounts[0]);
+        loadInitialData(accounts[0]);
+      } else {
+        // User disconnected wallet
+        setCurrentAccount('');
+        setIsAdmin(false);
+        setHasVoted(false);
+        setCandidates([]);
+        setElectionStatus({ active: false, started: false });
+      }
+    };
+
+    const handleChainChanged = () => window.location.reload();
+
+    window.ethereum.on('accountsChanged', handleAccountsChanged);
+    window.ethereum.on('chainChanged', handleChainChanged);
+
+    return () => {
+      window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
+      window.ethereum.removeListener('chainChanged', handleChainChanged);
+    };
+  }, [checkIfWalletIsConnected, loadInitialData]);
+
+  // ── Provider ──
 
   return (
     <VotingContext.Provider
       value={{
+        // Wallet
         currentAccount,
         connectWallet,
+
+        // Election data
         candidates,
         electionStatus,
         isLoading,
         isAdmin,
         hasVoted,
+
+        // Network state
+        networkOk,
+        networkError,
+        contractFound,
+        REQUIRED_CHAIN_ID,
+        RPC_URL,
+        CHAIN_NAME,
+
+        // Actions
         vote,
         loadCandidates,
+        addCandidate,
+        authorizeVoter,
+        startElection,
+        endElection,
       }}
     >
       {children}
