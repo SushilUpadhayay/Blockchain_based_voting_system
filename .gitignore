@@ -1,0 +1,19 @@
+# Hardhat
+node_modules
+cache
+artifacts
+
+# Environment files
+.env
+.env.local
+
+# Misc
+.DS_Store
+*.log
+coverage
+coverage.json
+typechain-types/
+
+# Frontend build
+frontend/dist
+frontend/node_modules
