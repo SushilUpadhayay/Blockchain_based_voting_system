@@ -1,0 +1,134 @@
+const User = require('../models/User');
+const { extractIdentityData } = require('../services/ocrService');
+
+// @desc    Upload ID Document & perform OCR
+// @route   POST /api/user/upload-document
+// @access  Public (Requires userId in body)
+const uploadDocument = async (req, res, next) => {
+  try {
+    const { userId } = req.body;
+
+    if (!userId) {
+      res.status(400);
+      throw new Error('Please provide a userId');
+    }
+
+    if (!req.file) {
+      res.status(400);
+      throw new Error('Please upload an image or PDF document');
+    }
+
+    const user = await User.findById(userId);
+
+    if (!user) {
+      res.status(404);
+      throw new Error('User not found');
+    }
+
+    if (user.status !== 'pending') {
+      res.status(400);
+      throw new Error(`Cannot upload document. Current status: ${user.status}`);
+    }
+
+    // Save document path
+    user.documentPath = req.file.path;
+    await user.save();
+
+    // Call Mock OCR
+    const ocrResult = await extractIdentityData(user.documentPath);
+
+    if (ocrResult.success && ocrResult.extractedData.isMatch) {
+      user.status = 'verified';
+      await user.save();
+
+      res.json({
+        message: 'Document uploaded and successfully verified via OCR. Waiting for admin approval.',
+        status: user.status,
+      });
+    } else {
+      res.status(400);
+      throw new Error('OCR verification failed. Information does not match.');
+    }
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Connect Blockchain Wallet
+// @route   POST /api/user/connect-wallet
+// @access  Private
+const connectWallet = async (req, res, next) => {
+  try {
+    const { walletAddress } = req.body;
+    const userId = req.user._id;
+
+    if (!walletAddress) {
+      res.status(400);
+      throw new Error('Please provide a wallet address');
+    }
+
+    const user = await User.findById(userId);
+
+    // Ensure status is approved
+    if (user.status !== 'approved') {
+      res.status(403);
+      throw new Error('Only approved users can connect a wallet');
+    }
+
+    // 1. Check if user already has a wallet
+    if (user.walletAddress) {
+      res.status(400);
+      throw new Error('User already has a connected wallet');
+    }
+
+    // 2. Check if wallet is already connected to another user
+    const walletExists = await User.findOne({ walletAddress });
+    if (walletExists) {
+      res.status(400);
+      throw new Error('Wallet is already connected to another user');
+    }
+
+    // Update user wallet
+    user.walletAddress = walletAddress;
+    await user.save();
+
+    res.json({
+      message: 'Wallet connected successfully',
+      walletAddress: user.walletAddress,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get user profile
+// @route   GET /api/user/profile
+// @access  Private
+const getProfile = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user._id);
+
+    if (user) {
+      res.json({
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        idNumber: user.idNumber,
+        status: user.status,
+        walletAddress: user.walletAddress,
+        role: user.role,
+      });
+    } else {
+      res.status(404);
+      throw new Error('User not found');
+    }
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = {
+  uploadDocument,
+  connectWallet,
+  getProfile,
+};
