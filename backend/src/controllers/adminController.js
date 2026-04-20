@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const { registerVoterOnChain } = require('../services/blockchainService');
 
 // @desc    Get all verified users waiting for admin approval
 // @route   GET /api/admin/pending-users
@@ -31,10 +32,26 @@ const approveUser = async (req, res, next) => {
       throw new Error(`Cannot approve user with status: ${user.status}. Must be 'verified'.`);
     }
 
+    if (!user.walletAddress) {
+      res.status(400);
+      throw new Error('Wallet not connected');
+    }
+
     user.status = 'approved';
+
+    // Register on blockchain
+    const result = await registerVoterOnChain(user.walletAddress);
+
+    // Optional: store tx hash
+    user.txHash = result.txHash;
+
     await user.save();
 
-    res.json({ message: 'User approved successfully', status: user.status });
+    res.json({
+      message: 'User approved and registered on blockchain',
+      status: user.status,
+      txHash: result.txHash
+    });
   } catch (error) {
     next(error);
   }

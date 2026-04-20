@@ -7,13 +7,30 @@ const provider = new ethers.JsonRpcProvider("http://127.0.0.1:8545");
 const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 
 const contractAddress = process.env.CONTRACT_ADDRESS;
-const abi = require("../config/contractABI.json");
+const artifact = require("../config/contractABI.json");
+const abi = artifact.abi ? artifact.abi : artifact;
 
 const contract = new ethers.Contract(contractAddress, abi, wallet);
 
+// Log available functions to validate integration (Safeguard)
+const availableFunctions = [];
+if (contract.interface?.forEachFunction) {
+  contract.interface.forEachFunction((fn) => availableFunctions.push(fn.name));
+} else if (contract.interface?.fragments) {
+  contract.interface.fragments.forEach(f => {
+    if (f.type === 'function') availableFunctions.push(f.name);
+  });
+}
+console.log("Deployed Contract Functions:", availableFunctions.join(', '));
+
+
 const registerVoterOnChain = async (walletAddress) => {
   try {
-    const tx = await contract.registerVoter(walletAddress);
+    if (!contract.interface.getFunction("authorizeVoter")) {
+      throw new Error("Function not found in ABI");
+    }
+
+    const tx = await contract.authorizeVoter(walletAddress);
     const receipt = await tx.wait();
 
     return {
