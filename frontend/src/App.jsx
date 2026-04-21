@@ -9,6 +9,7 @@ import UploadDocument from './pages/UploadDocument';
 import Login from './pages/Login';
 import VerifyOtp from './pages/VerifyOtp';
 import Dashboard from './pages/Dashboard';
+import AdminDashboard from './pages/AdminDashboard';
 
 function AppContent() {
   const location = useLocation();
@@ -25,6 +26,7 @@ function AppContent() {
           <Route path="/login" element={<Login />} />
           <Route path="/verify-otp" element={<VerifyOtp />} />
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/admin" element={<AdminDashboard />} />
         </Routes>
       </div>
     </div>

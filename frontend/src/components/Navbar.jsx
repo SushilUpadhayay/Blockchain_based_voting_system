@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { Activity, LogOut } from 'lucide-react';
 
 const Navbar = () => {
-  const { isAuthenticated, logout } = useAuth();
+  const { isAuthenticated, logout, user } = useAuth();
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -26,6 +26,11 @@ const Navbar = () => {
       <div className="flex items-center gap-4">
         {isAuthenticated ? (
           <>
+            {user?.role === 'admin' && (
+              <Link to="/admin" className="text-sm font-medium text-gray-700 hover:text-blue-600 transition-colors">
+                Admin
+              </Link>
+            )}
             <Link to="/dashboard" className="text-sm font-medium text-gray-700 hover:text-blue-600 transition-colors">
               Dashboard
             </Link>
