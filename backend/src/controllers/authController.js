@@ -117,23 +117,24 @@ const loginUser = async (req, res, next) => {
       throw new Error('User not found');
     }
 
-    // Check if account is locked
+    // Check if account is permanently blocked
     if (user.status === 'blocked') {
       res.status(403);
       throw new Error('Access denied. This account has been permanently blocked.');
     }
 
-    // Rate limiting / Lockout check (Optional: could add a lockout time)
+    // Rate-limit check BEFORE resetting — must check current attempts first
+    // so the lockout actually fires. (Checking after reset would always pass.)
     if (user.otpAttempts >= 5 && user.otpExpires > Date.now()) {
-        res.status(403);
-        throw new Error('Too many failed attempts. Please wait a few minutes before trying again.');
+      res.status(429);
+      throw new Error('Too many failed attempts. Please wait a few minutes before trying again.');
     }
 
-    // Generate OTP
+    // Generate OTP and reset attempt counter for the new code
     const otp = generateOTP();
     user.otp = otp;
     user.otpExpires = Date.now() + 5 * 60 * 1000; // 5 minutes
-    user.otpAttempts = 0; // Reset attempts on new valid OTP request
+    user.otpAttempts = 0;
     await user.save();
 
     await sendOTP(user, otp, 'login');

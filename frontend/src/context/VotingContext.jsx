@@ -36,7 +36,7 @@ export const VotingProvider = ({ children }) => {
   const [pendingCandidateId, setPendingCandidateId] = useState(null);
   const [isOtpVerified, setIsOtpVerified] = useState(false);
 
-  // ── Helpers ─
+  // ── Helpers ──
   const checkNetwork = useCallback(async (provider) => {
     const network = await provider.getNetwork();
     const currentChainId = Number(network.chainId);
@@ -59,6 +59,7 @@ export const VotingProvider = ({ children }) => {
     setNetworkError('');
     return true;
   }, []);
+
   const getContract = useCallback(async () => {
     if (!window.ethereum) {
       toast.error('MetaMask not found. Please install MetaMask.');
@@ -67,10 +68,8 @@ export const VotingProvider = ({ children }) => {
 
     const provider = new BrowserProvider(window.ethereum);
 
-    // Network guard
     if (!(await checkNetwork(provider))) return null;
 
-    // Contract existence guard
     const code = await provider.getCode(CONTRACT_ADDRESS);
     if (code === '0x') {
       const msg = `No contract at ${CONTRACT_ADDRESS.slice(0, 6)}…${CONTRACT_ADDRESS.slice(-4)}. Run deploy script first.`;
@@ -86,7 +85,6 @@ export const VotingProvider = ({ children }) => {
   }, [checkNetwork]);
 
   // ── Data loaders ──
-
   const loadCandidates = useCallback(async (contractInstance) => {
     try {
       const contract = contractInstance ?? (await getContract());
@@ -106,6 +104,12 @@ export const VotingProvider = ({ children }) => {
   }, [getContract]);
 
   const loadInitialData = useCallback(async (account) => {
+    // Skip blockchain queries for users who are not yet registered/approved.
+    // Pending, rejected, and blocked users have no need to query the chain.
+    if (user && user.role !== 'admin' && user.status !== 'registered') {
+      return;
+    }
+
     try {
       setIsLoading(true);
       const contract = await getContract();
@@ -117,7 +121,6 @@ export const VotingProvider = ({ children }) => {
       const adminAddr = await contract.admin();
       setIsAdmin(adminAddr.toLowerCase() === account.toLowerCase());
 
-      // Vote status
       const voted = await contract.hasVoted(account);
       setHasVoted(voted);
 
@@ -127,7 +130,7 @@ export const VotingProvider = ({ children }) => {
     } finally {
       setIsLoading(false);
     }
-  }, [getContract, loadCandidates]);
+  }, [getContract, loadCandidates, user]);
 
   // ── Wallet ──
   const connectWallet = async () => {
@@ -159,8 +162,7 @@ export const VotingProvider = ({ children }) => {
     }
   }, [loadInitialData]);
 
-  // ── Voter action ────
-
+  // ── Voter action ──
   const vote = async (candidateId) => {
     const toastId = 'vote';
     try {
@@ -169,30 +171,28 @@ export const VotingProvider = ({ children }) => {
         return;
       }
 
-      const accounts = await window.ethereum.request({
-        method: "eth_requestAccounts",
-      });
+      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
       const currentWallet = accounts[0];
       const registeredWallet = user?.walletAddress;
 
       if (!registeredWallet) {
-        toast.error("No registered wallet found for your account.", { id: toastId });
+        toast.error('No registered wallet found for your account.', { id: toastId });
         return;
       }
 
       if (currentWallet.toLowerCase() !== registeredWallet.toLowerCase()) {
-        toast.error("Connected wallet does not match your registered identity", { id: toastId });
+        toast.error('Connected wallet does not match your registered identity.', { id: toastId });
         return;
       }
 
-      // ── Step 1: Trigger OTP Modal ──
+      // Step 1: Require OTP verification before submitting
       if (!isOtpVerified) {
         setPendingCandidateId(candidateId);
         setIsOtpModalOpen(true);
         return;
       }
 
-      // ── Step 2: Cast the vote on blockchain ──
+      // Step 2: Cast the vote on blockchain
       setIsLoading(true);
       const contract = await getContract();
       if (!contract) return;
@@ -203,7 +203,7 @@ export const VotingProvider = ({ children }) => {
 
       toast.success('Vote cast successfully!', { id: toastId });
       setHasVoted(true);
-      setIsOtpVerified(false); // Reset verification for next time (security)
+      setIsOtpVerified(false);
       setPendingCandidateId(null);
       await loadCandidates();
     } catch (err) {
@@ -216,17 +216,14 @@ export const VotingProvider = ({ children }) => {
 
   const onOtpVerified = () => {
     setIsOtpVerified(true);
-    // After OTP is verified, continue the voting process
     if (pendingCandidateId !== null) {
-      // Small delay to ensure modal close animation finishes before blockchain prompt
       setTimeout(() => {
         vote(pendingCandidateId);
       }, 500);
     }
   };
 
-  // ── Admin actions ───
-
+  // ── Admin actions ──
   const addCandidate = async (name) => {
     const toastId = 'addCandidate';
     try {
@@ -259,7 +256,7 @@ export const VotingProvider = ({ children }) => {
       const tx = await contract.authorizeVoter(voterAddress);
       await tx.wait();
 
-      toast.success(`Voter authorized!`, { id: toastId });
+      toast.success('Voter authorized!', { id: toastId });
     } catch (err) {
       console.error('[VotingContext] authorizeVoter error:', err);
       toast.error(err.reason ?? err.message ?? 'Authorization failed.', { id: toastId });
@@ -311,7 +308,6 @@ export const VotingProvider = ({ children }) => {
   };
 
   // ── Lifecycle ──
-
   useEffect(() => {
     checkIfWalletIsConnected();
 
@@ -322,7 +318,6 @@ export const VotingProvider = ({ children }) => {
         setCurrentAccount(accounts[0]);
         loadInitialData(accounts[0]);
       } else {
-        // User disconnected wallet
         setCurrentAccount('');
         setIsAdmin(false);
         setHasVoted(false);
@@ -342,31 +337,23 @@ export const VotingProvider = ({ children }) => {
     };
   }, [checkIfWalletIsConnected, loadInitialData]);
 
-  // ── Provider ──
-
   return (
     <VotingContext.Provider
       value={{
-        // Wallet
         currentAccount,
         connectWallet,
-
-        // Election data
         candidates,
         electionStatus,
         isLoading,
         isAdmin,
         hasVoted,
-
-        // Network state
         networkOk,
         networkError,
         contractFound,
         REQUIRED_CHAIN_ID,
         RPC_URL,
         CHAIN_NAME,
-
-        // Actions
+        pendingCandidateId,
         vote,
         loadCandidates,
         addCandidate,
@@ -375,9 +362,9 @@ export const VotingProvider = ({ children }) => {
         endElection,
       }}
     >
-      <OTPModal 
-        isOpen={isOtpModalOpen} 
-        onClose={() => setIsOtpModalOpen(false)} 
+      <OTPModal
+        isOpen={isOtpModalOpen}
+        onClose={() => setIsOtpModalOpen(false)}
         onVerified={onOtpVerified}
         purpose="voting"
       />

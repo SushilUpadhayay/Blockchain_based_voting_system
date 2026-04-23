@@ -3,15 +3,11 @@ const { extractIdentityData } = require('../services/ocrService');
 
 // @desc    Upload ID Document & perform OCR
 // @route   POST /api/user/upload-document
-// @access  Public (Requires userId in body)
+// @access  Private (JWT required)
 const uploadDocument = async (req, res, next) => {
   try {
-    const { userId } = req.body;
-
-    if (!userId) {
-      res.status(400);
-      throw new Error('Please provide a userId');
-    }
+    // Use the authenticated user's ID from the JWT token — never trust the body
+    const userId = req.user._id;
 
     if (!req.file) {
       res.status(400);
@@ -38,7 +34,7 @@ const uploadDocument = async (req, res, next) => {
     const ocrResult = await extractIdentityData(user.documentPath);
 
     if (ocrResult.success && ocrResult.extractedData.isMatch) {
-      // Status stays 'pending' as per requirements: "Pending → user completed OTP + document upload, waiting for admin"
+      // Status stays 'pending': user completed upload, waiting for admin approval
       res.json({
         message: 'Document uploaded and passed initial OCR check. Waiting for admin approval.',
         status: user.status,
@@ -52,7 +48,7 @@ const uploadDocument = async (req, res, next) => {
   }
 };
 
-// @desc    Connect Blockchain Wallet
+// @desc    Connect Blockchain Wallet (disabled post-registration)
 // @route   POST /api/user/connect-wallet
 // @access  Private
 const connectWallet = async (req, res, next) => {

@@ -23,13 +23,13 @@ function AppContent() {
         <Routes>
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/register" element={<Register />} />
-          <Route 
-            path="/upload" 
+          <Route
+            path="/upload"
             element={
-              <ProtectedRoute>
+              <ProtectedRoute uploadOnly>
                 <UploadDocument />
               </ProtectedRoute>
-            } 
+            }
           />
           <Route path="/login" element={<Login />} />
           <Route path="/verify-otp" element={<VerifyOtp />} />

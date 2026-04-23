@@ -2,14 +2,29 @@ import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-const ProtectedRoute = ({ children, adminOnly = false }) => {
-  const { user } = useAuth();
+/**
+ * ProtectedRoute — wraps routes that require authentication.
+ *
+ * Props:
+ *   adminOnly   — if true, also requires user.role === 'admin'
+ *   uploadOnly  — if true, also requires user.status === 'pending' (doc upload step)
+ */
+const ProtectedRoute = ({ children, adminOnly = false, uploadOnly = false }) => {
+  const { user, isAuthenticated } = useAuth();
 
-  if (!user) {
+  // Must have a valid JWT token
+  if (!isAuthenticated || !user) {
     return <Navigate to="/login" replace />;
   }
 
+  // Admin-only routes
   if (adminOnly && user.role !== 'admin') {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  // Upload route guard — only pending users who haven't uploaded yet should be here.
+  // Registered / rejected users should not revisit /upload.
+  if (uploadOnly && user.status !== 'pending') {
     return <Navigate to="/dashboard" replace />;
   }
 

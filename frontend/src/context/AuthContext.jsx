@@ -1,47 +1,52 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect } from 'react';
 
 const AuthContext = createContext();
 
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
-  const [token, setTokenState] = useState(localStorage.getItem("token"));
-  const [user, setUser] = useState(null); // Optional: decode from token or fetch from API if needed
-  
+  const [token, setTokenState] = useState(localStorage.getItem('token'));
+  const [user, setUser] = useState(null);
+
   const isAuthenticated = !!token;
 
+  // ── Token helpers ─────────────────────────────────────────────────────────
   const setToken = (newToken) => {
     setTokenState(newToken);
     if (newToken) {
-      localStorage.setItem("token", newToken);
+      localStorage.setItem('token', newToken);
     } else {
-      localStorage.removeItem("token");
+      localStorage.removeItem('token');
     }
   };
 
+  // ── Login ─────────────────────────────────────────────────────────────────
   const login = (newToken, userData) => {
     setToken(newToken);
     if (userData) {
       setUser(userData);
-      localStorage.setItem("user", JSON.stringify(userData));
+      localStorage.setItem('user', JSON.stringify(userData));
     }
   };
 
+  // ── Logout ────────────────────────────────────────────────────────────────
   const logout = () => {
     setToken(null);
     setUser(null);
-    localStorage.removeItem("user");
-    // Do not remove userId, might be useful for re-register or keeping flow? Actually, usually logout clears it, but keeping it clean:
+    localStorage.removeItem('user');
+    localStorage.removeItem('token');
   };
 
+  // ── Rehydrate user from localStorage on page reload ───────────────────────
   useEffect(() => {
-    // Rehydrate user on load if needed
-    const storedUser = localStorage.getItem("user");
+    const storedUser = localStorage.getItem('user');
     if (storedUser) {
       try {
         setUser(JSON.parse(storedUser));
       } catch (e) {
-        console.error("Failed to parse stored user", e);
+        console.error('[AuthContext] Failed to parse stored user:', e);
+        // Corrupted data — clear it
+        localStorage.removeItem('user');
       }
     }
   }, []);
