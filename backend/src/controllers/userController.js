@@ -59,43 +59,8 @@ const uploadDocument = async (req, res, next) => {
 // @access  Private
 const connectWallet = async (req, res, next) => {
   try {
-    const { walletAddress } = req.body;
-    const userId = req.user._id;
-
-    if (!walletAddress) {
-      res.status(400);
-      throw new Error('Please provide a wallet address');
-    }
-
-    const user = await User.findById(userId);
-
-    // Ensure status is approved
-    if (user.status !== 'approved') {
-      res.status(403);
-      throw new Error('Only approved users can connect a wallet');
-    }
-
-    // 1. Check if user already has a wallet
-    if (user.walletAddress) {
-      res.status(400);
-      throw new Error('User already has a connected wallet');
-    }
-
-    // 2. Check if wallet is already connected to another user
-    const walletExists = await User.findOne({ walletAddress });
-    if (walletExists) {
-      res.status(400);
-      throw new Error('Wallet is already connected to another user');
-    }
-
-    // Update user wallet
-    user.walletAddress = walletAddress;
-    await user.save();
-
-    res.json({
-      message: 'Wallet connected successfully',
-      walletAddress: user.walletAddress,
-    });
+    res.status(400);
+    throw new Error('Wallet linking after login is disabled. Wallet must be connected during registration.');
   } catch (error) {
     next(error);
   }

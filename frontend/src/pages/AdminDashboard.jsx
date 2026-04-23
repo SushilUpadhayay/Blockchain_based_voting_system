@@ -15,11 +15,26 @@ import {
 } from 'lucide-react';
 import API from '../api/api';
 import { useAuth } from '../context/AuthContext';
+import { useVoting } from '../context/VotingContext';
+import ThemeToggle from '../components/ThemeToggle';
 
 const AdminDashboard = () => {
   const { user } = useAuth();
+  const { 
+    addCandidate, 
+    startElection, 
+    endElection, 
+    authorizeVoter,
+    electionStatus, 
+    isLoading: blockchainLoading,
+    candidates,
+    currentAccount,
+    connectWallet
+  } = useVoting();
+
   const [users, setUsers] = useState([]);
   const [candidateName, setCandidateName] = useState('');
+  const [voterAddress, setVoterAddress] = useState('');
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
 
@@ -70,65 +85,84 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleStartElection = async () => {
-    try {
-      setLoading(true);
-      const toastId = toast.loading('Broadcasting start command...');
-      await API.post('/admin/start-election');
-      toast.success('Election is now LIVE on blockchain', { id: toastId });
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to start election');
-    } finally {
-      setLoading(false);
+  const handleAuthorizeVoter = async (e) => {
+    e.preventDefault();
+    const addr = voterAddress.trim();
+    if (!addr.startsWith('0x') || addr.length !== 42) {
+      return toast.error('Please enter a valid Ethereum wallet address');
     }
+    await authorizeVoter(addr);
+    setVoterAddress('');
+  };
+
+  const handleStartElection = async () => {
+    if (candidates.length === 0) {
+      return toast.error('Please add at least one candidate first.');
+    }
+    await startElection();
   };
 
   const handleEndElection = async () => {
-    try {
-      setLoading(true);
-      const toastId = toast.loading('Broadcasting end command...');
-      await API.post('/admin/end-election');
-      toast.success('Election has been CLOSED', { id: toastId });
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to end election');
-    } finally {
-      setLoading(false);
-    }
+    if (!window.confirm("Confirm closing the election? No more votes can be cast.")) return;
+    await endElection();
   };
 
   const handleAddCandidate = async (e) => {
     e.preventDefault();
     if (!candidateName.trim()) {
-      toast.error('Candidate name is required');
-      return;
+      return toast.error('Candidate name is required');
     }
-    try {
-      setLoading(true);
-      const toastId = toast.loading('Adding candidate to ledger...');
-      await API.post('/admin/add-candidate', { name: candidateName });
-      toast.success(`${candidateName} added as a candidate`, { id: toastId });
-      setCandidateName('');
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Blockchain transaction failed');
-    } finally {
-      setLoading(false);
-    }
+    await addCandidate(candidateName.trim());
+    setCandidateName('');
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen py-12 px-4 sm:px-6 lg:px-8 transition-colors duration-300" style={{ backgroundColor: 'var(--bg-color)' }}>
       <div className="max-w-6xl mx-auto space-y-8">
         
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-8 rounded-2xl shadow-sm border transition-colors duration-300"
+             style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
           <div>
-            <h1 className="text-3xl font-extrabold text-gray-900 flex items-center gap-3">
+            <h1 className="text-3xl font-extrabold flex items-center gap-3" style={{ color: 'var(--text-color)' }}>
               <ShieldCheck className="text-blue-600 w-8 h-8" />
               Admin Control Panel
             </h1>
-            <p className="mt-2 text-gray-500">Manage election configurations and voter approvals</p>
+            <div className="mt-2 flex items-center gap-4">
+              <p className="text-sm opacity-70" style={{ color: 'var(--text-color)' }}>Manage election configurations and voter approvals</p>
+              <div className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2 border ${
+                !electionStatus.started ? 'bg-gray-100 text-gray-600 border-gray-200' :
+                electionStatus.active ? 'bg-green-100 text-green-700 border-green-200 animate-pulse' :
+                'bg-red-100 text-red-700 border-red-200'
+              }`}>
+                <div className={`w-2 h-2 rounded-full ${
+                  !electionStatus.started ? 'bg-gray-400' :
+                  electionStatus.active ? 'bg-green-600' : 'bg-red-600'
+                }`} />
+                {!electionStatus.started ? 'NOT STARTED' : electionStatus.active ? 'LIVE' : 'ENDED'}
+              </div>
+            </div>
           </div>
           <div className="flex items-center gap-3">
+            <ThemeToggle />
+            {currentAccount ? (
+              <div className="flex items-center gap-2 px-4 py-2 rounded-xl border transition-colors"
+                   style={{ backgroundColor: 'var(--bg-color)', borderColor: 'var(--border-color)' }}>
+                <Wallet className="w-4 h-4 opacity-50" style={{ color: 'var(--text-color)' }} />
+                <span className="text-xs font-mono opacity-70" style={{ color: 'var(--text-color)' }}>
+                  {currentAccount.slice(0, 6)}...{currentAccount.slice(-4)}
+                </span>
+                <span className="ml-2 w-2 h-2 bg-green-500 rounded-full" />
+              </div>
+            ) : (
+              <button 
+                onClick={connectWallet}
+                className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-xl text-sm font-bold transition-all shadow-lg shadow-amber-100"
+              >
+                <Wallet className="w-4 h-4" />
+                Connect Admin Wallet
+              </button>
+            )}
             <button 
               onClick={fetchUsers}
               className="p-2 hover:bg-gray-100 rounded-full transition-colors"
@@ -136,91 +170,141 @@ const AdminDashboard = () => {
             >
               <RefreshCw className={`w-5 h-5 text-gray-400 ${fetching ? 'animate-spin' : ''}`} />
             </button>
-            <div className="px-4 py-2 bg-blue-50 text-blue-700 rounded-lg text-sm font-semibold border border-blue-100">
-              Network: Local Hardhat
-            </div>
           </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           
           {/* SEC B: ELECTION CONTROL */}
-          <section className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+          <section className="p-6 rounded-2xl shadow-sm border hover:shadow-md transition-all"
+                   style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
             <div className="flex items-center gap-2 mb-6">
               <div className="p-2 bg-purple-50 rounded-lg">
                 <Play className="w-5 h-5 text-purple-600" />
               </div>
-              <h2 className="text-xl font-bold text-gray-800">Election Status</h2>
+              <h2 className="text-xl font-bold" style={{ color: 'var(--text-color)' }}>Election Control</h2>
             </div>
             <div className="space-y-4">
               <button
                 onClick={handleStartElection}
-                disabled={loading}
+                disabled={blockchainLoading || electionStatus.started || !currentAccount}
                 className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold py-3 px-4 rounded-xl transition-all shadow-lg shadow-blue-200"
               >
                 <Play className="w-4 h-4" />
-                Start Election
+                {electionStatus.started ? 'Election Started' : 'Start Election'}
               </button>
               <button
                 onClick={handleEndElection}
-                disabled={loading}
+                disabled={blockchainLoading || !electionStatus.active || !currentAccount}
                 className="w-full flex items-center justify-center gap-2 bg-white hover:bg-red-50 border-2 border-red-100 text-red-600 disabled:opacity-50 font-bold py-3 px-4 rounded-xl transition-all"
               >
                 <Square className="w-4 h-4" />
-                End Election
+                {!electionStatus.started ? 'End Election' : !electionStatus.active ? 'Closed' : 'End Election'}
               </button>
             </div>
-            <div className="mt-6 p-4 bg-gray-50 rounded-xl border border-dashed border-gray-200">
-              <p className="text-xs text-gray-500 leading-relaxed italic">
-                * Starting the election freezes candidate list and opens voting. Closing ends all activity.
+            {!currentAccount && (
+              <p className="mt-4 text-xs text-amber-600 text-center font-medium">
+                Wallet connection required for admin actions
               </p>
-            </div>
+            )}
           </section>
 
-          {/* SEC C: CANDIDATE MANAGEMENT */}
-          <section className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+          {/* SEC D: MANUAL AUTHORIZATION */}
+          <section className="p-6 rounded-2xl shadow-sm border hover:shadow-md transition-all"
+                   style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
             <div className="flex items-center gap-2 mb-6">
-              <div className="p-2 bg-green-50 rounded-lg">
-                <UserPlus className="w-5 h-5 text-green-600" />
+              <div className="p-2 bg-amber-50 rounded-lg">
+                <ShieldCheck className="w-5 h-5 text-amber-600" />
               </div>
-              <h2 className="text-xl font-bold text-gray-800">Candidate Enrollment</h2>
+              <h2 className="text-xl font-bold" style={{ color: 'var(--text-color)' }}>Manual Authorization</h2>
             </div>
-            <form onSubmit={handleAddCandidate} className="flex flex-col sm:flex-row gap-4">
-              <div className="relative flex-1">
+            <form onSubmit={handleAuthorizeVoter} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold opacity-50 uppercase tracking-widest mb-2" style={{ color: 'var(--text-color)' }}>Wallet Address</label>
                 <input
                   type="text"
-                  placeholder="Enter full name of candidate"
-                  value={candidateName}
-                  onChange={(e) => setCandidateName(e.target.value)}
-                  className="w-full border border-gray-200 p-3 pl-4 rounded-xl outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-400 transition-all text-gray-700"
+                  placeholder="0x..."
+                  value={voterAddress}
+                  onChange={(e) => setVoterAddress(e.target.value)}
+                  disabled={blockchainLoading || !currentAccount}
+                  className="w-full border p-3 rounded-xl outline-none focus:ring-4 focus:ring-amber-100 focus:border-amber-400 transition-all text-sm font-mono"
+                  style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-color)', borderColor: 'var(--border-color)' }}
                 />
               </div>
               <button
                 type="submit"
-                disabled={loading || !candidateName.trim()}
-                className="bg-gray-900 hover:bg-black disabled:opacity-50 text-white font-bold py-3 px-8 rounded-xl transition-all flex items-center justify-center gap-2"
+                disabled={blockchainLoading || !voterAddress.trim() || !currentAccount}
+                className="w-full bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white font-bold py-3 px-4 rounded-xl transition-all shadow-lg shadow-amber-100 flex items-center justify-center gap-2"
               >
                 <UserPlus className="w-4 h-4" />
-                Add to Ballot
+                Authorize Voter
               </button>
             </form>
+            <p className="mt-4 text-xs text-gray-400 leading-relaxed italic">
+              * Bypass the registration workflow by manually white-listing a wallet address.
+            </p>
+          </section>
+
+          {/* SEC C: CANDIDATE MANAGEMENT */}
+          <section className="lg:col-span-2 p-6 rounded-2xl shadow-sm border hover:shadow-md transition-all"
+                   style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
+            <div className="flex items-center gap-2 mb-6">
+              <div className="p-2 bg-green-50 rounded-lg">
+                <UserPlus className="w-5 h-5 text-green-600" />
+              </div>
+              <h2 className="text-xl font-bold" style={{ color: 'var(--text-color)' }}>Candidate Enrollment</h2>
+              <span className="ml-auto text-xs font-bold opacity-50 px-2 py-1 rounded" style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-color)' }}>
+                Current: {candidates.length}
+              </span>
+            </div>
+            
+            {electionStatus.started ? (
+              <div className="p-4 bg-gray-50 rounded-xl border border-gray-200 flex items-center gap-3 text-gray-500">
+                <AlertCircle className="w-5 h-5" />
+                <p className="text-sm">Candidate enrollment is <strong>locked</strong> once election has started.</p>
+              </div>
+            ) : (
+              <form onSubmit={handleAddCandidate} className="flex flex-col sm:flex-row gap-4">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    placeholder="Enter full name of candidate"
+                    value={candidateName}
+                    onChange={(e) => setCandidateName(e.target.value)}
+                    disabled={blockchainLoading || electionStatus.started || !currentAccount}
+                    className="w-full border p-3 pl-4 rounded-xl outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-400 transition-all"
+                    style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-color)', borderColor: 'var(--border-color)' }}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={blockchainLoading || electionStatus.started || !candidateName.trim() || !currentAccount}
+                  className="bg-gray-900 hover:bg-black disabled:opacity-50 text-white font-bold py-3 px-8 rounded-xl transition-all flex items-center justify-center gap-2"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  Add to Ballot
+                </button>
+              </form>
+            )}
+
             <div className="mt-8 flex items-start gap-3 p-4 bg-blue-50 rounded-xl">
               <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" />
               <p className="text-sm text-blue-800">
-                Candidates must be added <strong>before</strong> the election starts. Blockchain entries are immutable.
+                Candidates must be added <strong>before</strong> starting the election. Every name is permanently recorded on the blockchain.
               </p>
             </div>
           </section>
         </div>
 
         {/* SEC A: PENDING USERS */}
-        <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="p-6 border-b border-gray-50 flex items-center justify-between">
+        <section className="rounded-2xl shadow-sm border overflow-hidden transition-all"
+                 style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
+          <div className="p-6 border-b flex items-center justify-between" style={{ borderColor: 'var(--border-color)' }}>
             <div className="flex items-center gap-2">
               <div className="p-2 bg-blue-50 rounded-lg">
                 <Users className="w-5 h-5 text-blue-600" />
               </div>
-              <h2 className="text-xl font-bold text-gray-800">Voter Verification Requests</h2>
+              <h2 className="text-xl font-bold" style={{ color: 'var(--text-color)' }}>Voter Verification Requests</h2>
             </div>
             <span className="bg-gray-100 text-gray-600 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">
               {users.length} Pending
@@ -247,20 +331,21 @@ const AdminDashboard = () => {
                     <th className="py-4 px-6 text-center text-xs font-bold text-gray-500 uppercase tracking-wider">Decision</th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-50">
-                  {users.map((u) => (
-                    <tr key={u._id} className="hover:bg-gray-50/50 transition-colors">
-                      <td className="py-4 px-6">
-                        <div className="font-semibold text-gray-900">{u.name}</div>
-                      </td>
-                      <td className="py-4 px-6 text-sm text-gray-600">{u.email}</td>
-                      <td className="py-4 px-6 text-sm font-mono text-gray-600">{u.idNumber}</td>
-                      <td className="py-4 px-6">
-                        <div className="flex items-center gap-2 text-xs font-mono text-gray-400 bg-gray-50 px-2 py-1 rounded-md w-fit">
-                          <Wallet className="w-3 h-3" />
-                          {u.walletAddress ? `${u.walletAddress.slice(0, 6)}...${u.walletAddress.slice(-4)}` : 'N/A'}
-                        </div>
-                      </td>
+                  <tbody className="divide-y" style={{ borderColor: 'var(--border-color)' }}>
+                    {users.map((u) => (
+                      <tr key={u._id} className="hover:opacity-80 transition-colors">
+                        <td className="py-4 px-6">
+                          <div className="font-semibold" style={{ color: 'var(--text-color)' }}>{u.name}</div>
+                        </td>
+                        <td className="py-4 px-6 text-sm opacity-70" style={{ color: 'var(--text-color)' }}>{u.email}</td>
+                        <td className="py-4 px-6 text-sm font-mono opacity-70" style={{ color: 'var(--text-color)' }}>{u.idNumber}</td>
+                        <td className="py-4 px-6">
+                          <div className="flex items-center gap-2 text-xs font-mono opacity-50 px-2 py-1 rounded-md w-fit"
+                               style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-color)' }}>
+                            <Wallet className="w-3 h-3" />
+                            {u.walletAddress ? `${u.walletAddress.slice(0, 6)}...${u.walletAddress.slice(-4)}` : 'N/A'}
+                          </div>
+                        </td>
                       <td className="py-4 px-6">
                         <div className="flex justify-center items-center gap-3">
                           <button
