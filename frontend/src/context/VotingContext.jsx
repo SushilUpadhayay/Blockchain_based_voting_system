@@ -8,6 +8,7 @@ import React, {
 import { BrowserProvider, Contract } from 'ethers';
 import { CONTRACT_ABI, CONTRACT_ADDRESS } from '../utils/constants';
 import toast from 'react-hot-toast';
+import { useAuth } from './AuthContext';
 
 // ── Network config (from .env) ──
 const REQUIRED_CHAIN_ID = Number(import.meta.env.VITE_CHAIN_ID ?? 31337);
@@ -20,6 +21,7 @@ const VotingContext = createContext();
 export const useVoting = () => useContext(VotingContext);
 
 export const VotingProvider = ({ children }) => {
+  const { user } = useAuth();
   const [currentAccount, setCurrentAccount] = useState('');
   const [candidates, setCandidates] = useState([]);
   const [electionStatus, setElectionStatus] = useState({ active: false, started: false });
@@ -158,7 +160,29 @@ export const VotingProvider = ({ children }) => {
   const vote = async (candidateId) => {
     const toastId = 'vote';
     try {
+      if (!window.ethereum) {
+        toast.error('Install MetaMask first.', { id: toastId });
+        return;
+      }
+
       setIsLoading(true);
+
+      const accounts = await window.ethereum.request({
+        method: "eth_requestAccounts",
+      });
+      const currentWallet = accounts[0];
+      const registeredWallet = user?.walletAddress;
+
+      if (!registeredWallet) {
+        toast.error("No registered wallet found for your account.", { id: toastId });
+        return;
+      }
+
+      if (currentWallet.toLowerCase() !== registeredWallet.toLowerCase()) {
+        toast.error("Connected wallet does not match your registered identity", { id: toastId });
+        return;
+      }
+
       const contract = await getContract();
       if (!contract) return;
 

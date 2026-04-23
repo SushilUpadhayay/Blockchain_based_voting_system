@@ -32,14 +32,14 @@ const AdminPanel = () => {
   };
 
   return (
-    <div className="bg-white border border-amber-200 rounded-2xl p-6 shadow-sm mb-8">
+    <div className="rounded-2xl p-6 shadow-sm mb-8 border transition-colors" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
       {/* Header */}
       <div className="flex items-center gap-2 mb-6">
         <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center">
           <Shield className="w-4 h-4 text-white" />
         </div>
-        <h2 className="text-lg font-bold text-gray-900">Admin Panel</h2>
-        <span className="ml-auto text-xs font-semibold px-2 py-1 rounded-full bg-amber-100 text-amber-700">
+        <h2 className="text-lg font-bold" style={{ color: 'var(--text-color)' }}>Admin Panel</h2>
+        <span className="ml-auto text-xs font-semibold px-2 py-1 rounded-full opacity-70" style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-color)' }}>
           Admin Only
         </span>
       </div>
@@ -47,7 +47,7 @@ const AdminPanel = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Add Candidate */}
         <div className="space-y-3">
-          <label className="block text-sm font-semibold text-gray-700">
+          <label className="block text-sm font-semibold mb-1" style={{ color: 'var(--text-color)' }}>
             Add Candidate
           </label>
           <form onSubmit={handleAddCandidate} className="flex gap-2">
@@ -57,9 +57,8 @@ const AdminPanel = () => {
               onChange={(e) => setCandidateName(e.target.value)}
               placeholder="Candidate name"
               disabled={electionStatus.started || isLoading}
-              className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg 
-                         focus:outline-none focus:ring-2 focus:ring-blue-500 
-                         disabled:bg-gray-50 disabled:text-gray-400"
+              className="flex-1 px-3 py-2 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+              style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-color)', borderColor: 'var(--border-color)' }}
             />
             <button
               type="submit"
@@ -81,7 +80,7 @@ const AdminPanel = () => {
 
         {/* Authorize Voter */}
         <div className="space-y-3">
-          <label className="block text-sm font-semibold text-gray-700">
+          <label className="block text-sm font-semibold mb-1" style={{ color: 'var(--text-color)' }}>
             Authorize Voter
           </label>
           <form onSubmit={handleAuthorizeVoter} className="flex gap-2">
@@ -91,9 +90,8 @@ const AdminPanel = () => {
               onChange={(e) => setVoterAddress(e.target.value)}
               placeholder="0x... wallet address"
               disabled={isLoading}
-              className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg 
-                         focus:outline-none focus:ring-2 focus:ring-blue-500 
-                         disabled:bg-gray-50 disabled:text-gray-400 font-mono"
+              className="flex-1 px-3 py-2 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 transition-colors font-mono"
+              style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-color)', borderColor: 'var(--border-color)' }}
             />
             <button
               type="submit"
@@ -110,8 +108,8 @@ const AdminPanel = () => {
       </div>
 
       {/* Election Controls */}
-      <div className="mt-6 pt-6 border-t border-gray-100 flex items-center gap-3 flex-wrap">
-        <span className="text-sm font-semibold text-gray-700 mr-2">
+      <div className="mt-6 pt-6 border-t flex items-center gap-3 flex-wrap" style={{ borderColor: 'var(--border-color)' }}>
+        <span className="text-sm font-semibold mr-2" style={{ color: 'var(--text-color)' }}>
           Election Control:
         </span>
 

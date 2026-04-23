@@ -27,8 +27,8 @@ const userSchema = new mongoose.Schema(
     },
     walletAddress: {
       type: String,
+      required: true,
       unique: true,
-      sparse: true, // Allows multiple null/undefined values, but values present must be unique
     },
     role: {
       type: String,
