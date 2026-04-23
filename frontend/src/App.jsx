@@ -23,7 +23,14 @@ function AppContent() {
         <Routes>
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/register" element={<Register />} />
-          <Route path="/upload" element={<UploadDocument />} />
+          <Route 
+            path="/upload" 
+            element={
+              <ProtectedRoute>
+                <UploadDocument />
+              </ProtectedRoute>
+            } 
+          />
           <Route path="/login" element={<Login />} />
           <Route path="/verify-otp" element={<VerifyOtp />} />
           
@@ -44,6 +51,9 @@ function AppContent() {
               </ProtectedRoute>
             } 
           />
+
+          {/* Catch-all route to handle invalid URLs */}
+          <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </div>
     </div>

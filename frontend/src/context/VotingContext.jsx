@@ -9,6 +9,7 @@ import { BrowserProvider, Contract } from 'ethers';
 import { CONTRACT_ABI, CONTRACT_ADDRESS } from '../utils/constants';
 import toast from 'react-hot-toast';
 import { useAuth } from './AuthContext';
+import OTPModal from '../components/OTPModal';
 
 // ── Network config (from .env) ──
 const REQUIRED_CHAIN_ID = Number(import.meta.env.VITE_CHAIN_ID ?? 31337);
@@ -31,6 +32,9 @@ export const VotingProvider = ({ children }) => {
   const [networkOk, setNetworkOk] = useState(true);
   const [networkError, setNetworkError] = useState('');
   const [contractFound, setContractFound] = useState(true);
+  const [isOtpModalOpen, setIsOtpModalOpen] = useState(false);
+  const [pendingCandidateId, setPendingCandidateId] = useState(null);
+  const [isOtpVerified, setIsOtpVerified] = useState(false);
 
   // ── Helpers ─
   const checkNetwork = useCallback(async (provider) => {
@@ -165,8 +169,6 @@ export const VotingProvider = ({ children }) => {
         return;
       }
 
-      setIsLoading(true);
-
       const accounts = await window.ethereum.request({
         method: "eth_requestAccounts",
       });
@@ -183,21 +185,43 @@ export const VotingProvider = ({ children }) => {
         return;
       }
 
+      // ── Step 1: Trigger OTP Modal ──
+      if (!isOtpVerified) {
+        setPendingCandidateId(candidateId);
+        setIsOtpModalOpen(true);
+        return;
+      }
+
+      // ── Step 2: Cast the vote on blockchain ──
+      setIsLoading(true);
       const contract = await getContract();
       if (!contract) return;
 
-      toast.loading('Submitting vote…', { id: toastId });
+      toast.loading('Submitting vote to blockchain…', { id: toastId });
       const tx = await contract.vote(candidateId);
       await tx.wait();
 
       toast.success('Vote cast successfully!', { id: toastId });
       setHasVoted(true);
+      setIsOtpVerified(false); // Reset verification for next time (security)
+      setPendingCandidateId(null);
       await loadCandidates();
     } catch (err) {
       console.error('[VotingContext] vote error:', err);
       toast.error(err.reason ?? err.message ?? 'Vote failed.', { id: toastId });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const onOtpVerified = () => {
+    setIsOtpVerified(true);
+    // After OTP is verified, continue the voting process
+    if (pendingCandidateId !== null) {
+      // Small delay to ensure modal close animation finishes before blockchain prompt
+      setTimeout(() => {
+        vote(pendingCandidateId);
+      }, 500);
     }
   };
 
@@ -351,6 +375,12 @@ export const VotingProvider = ({ children }) => {
         endElection,
       }}
     >
+      <OTPModal 
+        isOpen={isOtpModalOpen} 
+        onClose={() => setIsOtpModalOpen(false)} 
+        onVerified={onOtpVerified}
+        purpose="voting"
+      />
       {children}
     </VotingContext.Provider>
   );

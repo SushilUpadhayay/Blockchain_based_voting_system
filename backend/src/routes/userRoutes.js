@@ -4,7 +4,7 @@ const { uploadDocument, connectWallet, getProfile } = require('../controllers/us
 const { protect } = require('../middleware/auth');
 const { upload } = require('../middleware/upload');
 
-router.post('/upload-document', upload.single('document'), uploadDocument);
+router.post('/upload-document', protect, upload.single('document'), uploadDocument);
 router.post('/connect-wallet', protect, connectWallet);
 router.get('/profile', protect, getProfile);
 

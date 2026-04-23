@@ -4,6 +4,7 @@ import CandidateCard from './CandidateCard';
 import AdminPanel from './AdminPanel';
 import { Wallet, Activity, RefreshCw, AlertTriangle, ServerCrash } from 'lucide-react';
 import ThemeToggle from './ThemeToggle';
+import { useAuth } from '../context/AuthContext';
 
 const Dashboard = () => {
   const {

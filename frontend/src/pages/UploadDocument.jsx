@@ -2,10 +2,12 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import API from '../api/api';
+import { useAuth } from '../context/AuthContext';
 import { CheckCircle2, UploadCloud } from 'lucide-react';
 
 const UploadDocument = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [isUploaded, setIsUploaded] = useState(false);
@@ -18,7 +20,7 @@ const UploadDocument = () => {
 
   const handleUpload = async (e) => {
     e.preventDefault();
-    const userId = localStorage.getItem('userId');
+    const userId = user?._id;
     
     if (!userId) {
       toast.error("User ID not found. Please register first.");

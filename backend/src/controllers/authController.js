@@ -54,6 +54,9 @@ const registerUser = async (req, res, next) => {
         name: user.name,
         email: user.email,
         status: user.status,
+        role: user.role,
+        walletAddress: user.walletAddress,
+        token: generateToken(user._id),
         message: user.status === 'pending' ? 'Identity updated. Please proceed to upload documents.' : 'Resubmission started. Please upload your documents.',
       });
     }
@@ -75,6 +78,9 @@ const registerUser = async (req, res, next) => {
         name: user.name,
         email: user.email,
         status: user.status,
+        role: user.role,
+        walletAddress: user.walletAddress,
+        token: generateToken(user._id),
         message: 'Registration successful. Please proceed to upload your ID document.',
       });
     } else {
@@ -86,12 +92,23 @@ const registerUser = async (req, res, next) => {
   }
 };
 
+// Helper for email validation
+const isValidEmail = (email) => {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+};
+
 // @desc    Request OTP for Login
 // @route   POST /api/auth/login
 // @access  Public
 const loginUser = async (req, res, next) => {
   try {
     const { email } = req.body;
+
+    if (!email || !isValidEmail(email)) {
+      res.status(400);
+      throw new Error('Please provide a valid email address');
+    }
 
     const user = await User.findOne({ email });
 
@@ -100,24 +117,29 @@ const loginUser = async (req, res, next) => {
       throw new Error('User not found');
     }
 
-    // Allow login for pending and rejected users to see their status
-    // Only blocked users are strictly forbidden
+    // Check if account is locked
     if (user.status === 'blocked') {
       res.status(403);
       throw new Error('Access denied. This account has been permanently blocked.');
+    }
+
+    // Rate limiting / Lockout check (Optional: could add a lockout time)
+    if (user.otpAttempts >= 5 && user.otpExpires > Date.now()) {
+        res.status(403);
+        throw new Error('Too many failed attempts. Please wait a few minutes before trying again.');
     }
 
     // Generate OTP
     const otp = generateOTP();
     user.otp = otp;
     user.otpExpires = Date.now() + 5 * 60 * 1000; // 5 minutes
-    user.otpAttempts = 0; // Reset attempts on new OTP request
+    user.otpAttempts = 0; // Reset attempts on new valid OTP request
     await user.save();
 
-    await sendOTP(user, otp);
+    await sendOTP(user, otp, 'login');
 
     res.json({
-      message: 'OTP sent successfully',
+      message: 'OTP sent successfully to your email',
       email: user.email,
     });
   } catch (error) {
@@ -132,6 +154,11 @@ const verifyOtp = async (req, res, next) => {
   try {
     const { email, otp } = req.body;
 
+    if (!email || !otp) {
+      res.status(400);
+      throw new Error('Email and OTP are required');
+    }
+
     const user = await User.findOne({ email });
 
     if (!user) {
@@ -139,30 +166,35 @@ const verifyOtp = async (req, res, next) => {
       throw new Error('User not found');
     }
 
-    if (user.otpAttempts >= 5) {
+    // Check if account is locked for too many attempts
+    if (user.otpAttempts >= 5 && user.otpExpires > Date.now()) {
       res.status(403);
-      throw new Error('Too many failed attempts. Please request a new OTP.');
+      throw new Error('Account locked due to too many failed attempts. Please request a new OTP.');
+    }
+
+    if (user.otpExpires < Date.now()) {
+      res.status(401);
+      throw new Error('OTP expired. Please request a new one.');
     }
 
     if (user.otp !== otp) {
       user.otpAttempts += 1;
       await user.save();
+      
+      if (user.otpAttempts >= 5) {
+        res.status(403);
+        throw new Error('Too many failed attempts. This OTP is now locked.');
+      }
+
       res.status(401);
       throw new Error(`Invalid OTP. ${5 - user.otpAttempts} attempts remaining.`);
     }
 
-    if (user.otpExpires < Date.now()) {
-      res.status(401);
-      throw new Error('OTP expired');
-    }
-
-    // Clear OTP and reset attempts after successful use
+    // Prevent reuse by checking if OTP is already used (optional if we clear it)
+    // Clearing OTP and reset attempts after successful use
     user.otp = undefined;
     user.otpExpires = undefined;
     user.otpAttempts = 0;
-    
-    // Mark user as verified if they were pending
-    // status remains 'pending' until admin approval
     
     await user.save();
 
@@ -181,8 +213,84 @@ const verifyOtp = async (req, res, next) => {
   }
 };
 
+// @desc    Request OTP for Voting
+// @route   POST /api/auth/request-vote-otp
+// @access  Private (Registered Voters only)
+const requestVoteOTP = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user._id);
+
+    if (!user) {
+        res.status(404);
+        throw new Error('User not found');
+    }
+
+    if (user.status !== 'registered') {
+        res.status(403);
+        throw new Error('Only registered and approved voters can request a voting OTP');
+    }
+
+    // Generate Voting OTP
+    const otp = generateOTP();
+    user.otp = otp;
+    user.otpExpires = Date.now() + 5 * 60 * 1000; // 5 minutes
+    user.otpAttempts = 0;
+    await user.save();
+
+    await sendOTP(user, otp, 'voting');
+
+    res.json({
+      message: 'Voting OTP sent to your registered email',
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Verify Voting OTP
+// @route   POST /api/auth/verify-vote-otp
+// @access  Private (Registered Voters only)
+const verifyVoteOTP = async (req, res, next) => {
+  try {
+    const { otp } = req.body;
+    const user = await User.findById(req.user._id);
+
+    if (!user) {
+        res.status(404);
+        throw new Error('User not found');
+    }
+
+    if (user.otpExpires < Date.now()) {
+      res.status(401);
+      throw new Error('OTP expired');
+    }
+
+    if (user.otp !== otp) {
+      user.otpAttempts += 1;
+      await user.save();
+      res.status(401);
+      throw new Error(`Invalid OTP. ${5 - user.otpAttempts} attempts remaining.`);
+    }
+
+    // Clear OTP after success
+    user.otp = undefined;
+    user.otpExpires = undefined;
+    user.otpAttempts = 0;
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'OTP verified. You can now cast your vote.',
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   registerUser,
   loginUser,
   verifyOtp,
+  requestVoteOTP,
+  verifyVoteOTP,
 };

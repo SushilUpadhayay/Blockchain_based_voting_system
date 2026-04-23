@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import API from '../api/api';
+import { useAuth } from '../context/AuthContext';
 
 const Register = () => {
   const navigate = useNavigate();
+  const { login } = useAuth();
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -61,17 +63,15 @@ const Register = () => {
         idNumber: formData.idNumber,
         walletAddress: address
       });
-      const userId = response.data._id;
+      const { token, ...userData } = response.data;
 
-      if (!userId) {
-        throw new Error("No userId returned from backend");
+      if (token) {
+        login(token, userData);
+        toast.success("Registration successful! Please upload your document.");
+        navigate('/upload');
+      } else {
+        throw new Error("No token returned from backend");
       }
-
-      localStorage.setItem("userId", userId);
-      console.log("Saved userId:", userId);
-
-      toast.success("Registration successful! Please upload your document.");
-      navigate('/upload');
     } catch (error) {
       console.error("Register Error:", error.response?.data || error.message);
       toast.error(error.response?.data?.message || "Registration failed.");
