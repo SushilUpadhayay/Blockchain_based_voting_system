@@ -7,7 +7,7 @@ const { generateOTP, sendOTP } = require('../services/otpService');
 // @access  Public
 const registerUser = async (req, res, next) => {
   try {
-    const { name, email, idNumber, walletAddress } = req.body;
+    const { name, email, idNumber, dob, address, walletAddress } = req.body;
 
     if (!walletAddress) {
       res.status(400);
@@ -37,6 +37,8 @@ const registerUser = async (req, res, next) => {
       user.name = name;
       user.email = email;
       user.idNumber = idNumber;
+      user.dob = dob;
+      user.address = address;
       user.walletAddress = walletAddress;
       
       // If they were rejected, resetting to pending as they are now "resubmitting"
@@ -60,6 +62,8 @@ const registerUser = async (req, res, next) => {
       name,
       email,
       idNumber,
+      dob,
+      address,
       walletAddress,
       status: 'pending',
       documentPath: 'pending_upload', 
@@ -106,7 +110,8 @@ const loginUser = async (req, res, next) => {
     // Generate OTP
     const otp = generateOTP();
     user.otp = otp;
-    user.otpExpires = Date.now() + 10 * 60 * 1000; // 10 minutes from now
+    user.otpExpires = Date.now() + 5 * 60 * 1000; // 5 minutes
+    user.otpAttempts = 0; // Reset attempts on new OTP request
     await user.save();
 
     await sendOTP(user, otp);
@@ -134,9 +139,16 @@ const verifyOtp = async (req, res, next) => {
       throw new Error('User not found');
     }
 
+    if (user.otpAttempts >= 5) {
+      res.status(403);
+      throw new Error('Too many failed attempts. Please request a new OTP.');
+    }
+
     if (user.otp !== otp) {
+      user.otpAttempts += 1;
+      await user.save();
       res.status(401);
-      throw new Error('Invalid OTP');
+      throw new Error(`Invalid OTP. ${5 - user.otpAttempts} attempts remaining.`);
     }
 
     if (user.otpExpires < Date.now()) {
@@ -144,9 +156,14 @@ const verifyOtp = async (req, res, next) => {
       throw new Error('OTP expired');
     }
 
-    // Clear OTP after successful use
+    // Clear OTP and reset attempts after successful use
     user.otp = undefined;
     user.otpExpires = undefined;
+    user.otpAttempts = 0;
+    
+    // Mark user as verified if they were pending
+    // status remains 'pending' until admin approval
+    
     await user.save();
 
     res.json({

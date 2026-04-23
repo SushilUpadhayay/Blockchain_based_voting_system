@@ -13,7 +13,7 @@ const Login = () => {
     setLoading(true);
     try {
       await API.post('/auth/login', { email });
-      toast.success("OTP sent to your email!");
+      toast.success("OTP sent to your phone!");
       // Pass email via state so VerifyOtp knows who is authenticating
       navigate('/verify-otp', { state: { email } });
     } catch (error) {
@@ -28,7 +28,7 @@ const Login = () => {
     <div className="min-h-screen flex items-center justify-center p-6 transition-colors duration-300" style={{ backgroundColor: 'var(--bg-color)' }}>
       <div className="max-w-md w-full p-8 rounded-xl shadow-md border transition-colors duration-300" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
         <h2 className="text-2xl font-bold mb-6 text-center" style={{ color: 'var(--text-color)' }}>Log in</h2>
-        <p className="mb-6 text-center text-sm opacity-70" style={{ color: 'var(--text-color)' }}>Enter your registered email to receive a secure OTP.</p>
+        <p className="mb-6 text-center text-sm opacity-70" style={{ color: 'var(--text-color)' }}>Enter your registered email to receive a secure OTP on your phone.</p>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-color)' }}>Email</label>

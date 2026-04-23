@@ -16,6 +16,14 @@ const userSchema = new mongoose.Schema(
       required: true,
       unique: true,
     },
+    dob: {
+      type: String,
+      required: true,
+    },
+    address: {
+      type: String,
+      required: true,
+    },
     documentPath: {
       type: String,
       required: true,
@@ -43,6 +51,10 @@ const userSchema = new mongoose.Schema(
     },
     otpExpires: {
       type: Date,
+    },
+    otpAttempts: {
+      type: Number,
+      default: 0,
     },
   },
   {
