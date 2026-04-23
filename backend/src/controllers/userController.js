@@ -27,7 +27,7 @@ const uploadDocument = async (req, res, next) => {
 
     if (user.status !== 'pending') {
       res.status(400);
-      throw new Error(`Cannot upload document. Current status: ${user.status}`);
+      throw new Error(`Cannot upload document. Current status: ${user.status}. Only pending users can upload.`);
     }
 
     // Save document path
@@ -38,16 +38,14 @@ const uploadDocument = async (req, res, next) => {
     const ocrResult = await extractIdentityData(user.documentPath);
 
     if (ocrResult.success && ocrResult.extractedData.isMatch) {
-      user.status = 'verified';
-      await user.save();
-
+      // Status stays 'pending' as per requirements: "Pending → user completed OTP + document upload, waiting for admin"
       res.json({
-        message: 'Document uploaded and successfully verified via OCR. Waiting for admin approval.',
+        message: 'Document uploaded and passed initial OCR check. Waiting for admin approval.',
         status: user.status,
       });
     } else {
       res.status(400);
-      throw new Error('OCR verification failed. Information does not match.');
+      throw new Error('OCR verification failed. The information on your document does not match your registration data.');
     }
   } catch (error) {
     next(error);

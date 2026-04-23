@@ -20,6 +20,10 @@ const Dashboard = () => {
     REQUIRED_CHAIN_ID,
     RPC_URL,
   } = useVoting();
+  const { user } = useAuth();
+
+  const status = user?.status || 'pending';
+  const rejectionReason = user?.rejectionReason || 'No reason provided';
 
   return (
     <div className="min-h-screen flex flex-col transition-colors duration-300" style={{ backgroundColor: 'var(--bg-color)' }}>
@@ -137,37 +141,80 @@ const Dashboard = () => {
 
         {/* Removed AdminPanel from here as admins use /admin route */}
 
-        {/* Candidates / Connect prompt */}
-        {!currentAccount ? (
-          <div className="flex flex-col items-center justify-center p-12 rounded-2xl border border-dashed transition-colors" 
-               style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
-            <Wallet className="w-12 h-12 mb-4 opacity-50" style={{ color: 'var(--text-color)' }} />
-            <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-color)' }}>Wallet Required</h3>
-            <p className="text-center max-w-md mb-6 opacity-70" style={{ color: 'var(--text-color)' }}>
-              Connect your MetaMask wallet to view candidates and cast your vote.
+        {/* Status-based Views */}
+        {status === 'blocked' ? (
+          <div className="flex flex-col items-center justify-center p-12 rounded-2xl border border-red-200 bg-red-50 text-center">
+            <AlertTriangle className="w-12 h-12 mb-4 text-red-600" />
+            <h3 className="text-xl font-bold mb-2 text-red-800">Access Permanently Blocked</h3>
+            <p className="max-w-md opacity-80 text-red-700">
+              Your account has been permanently blocked due to a policy violation or duplicate identity. 
+              If you believe this is an error, please contact support.
+            </p>
+          </div>
+        ) : status === 'rejected' ? (
+          <div className="flex flex-col items-center justify-center p-12 rounded-2xl border border-orange-200 bg-orange-50 text-center">
+            <AlertTriangle className="w-12 h-12 mb-4 text-orange-600" />
+            <h3 className="text-xl font-bold mb-2 text-orange-800">Registration Rejected</h3>
+            <p className="max-w-md mb-4 text-orange-700">
+              Reason: <span className="font-semibold underline">{rejectionReason}</span>
+            </p>
+            <p className="max-w-md mb-6 opacity-80 text-orange-700">
+              You can correct the issues and resubmit your registration for another review.
             </p>
             <button
-              onClick={connectWallet}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg
-                         font-medium transition-colors"
+              onClick={() => window.location.href = '/register'}
+              className="bg-orange-600 hover:bg-orange-700 text-white px-6 py-3 rounded-lg font-medium transition-colors shadow-sm"
             >
-              Connect MetaMask
+              Update & Resubmit
             </button>
           </div>
-        ) : candidates.length === 0 ? (
-          <div className="text-center p-12 rounded-2xl border transition-colors" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
-            <p className="opacity-70" style={{ color: 'var(--text-color)' }}>
-              {isAdmin
-                ? 'No candidates yet. Use the Admin Panel above to add candidates.'
-                : 'No candidates found for this election.'}
+        ) : status === 'pending' ? (
+          <div className="flex flex-col items-center justify-center p-12 rounded-2xl border border-blue-200 bg-blue-50 text-center">
+            <Activity className="w-12 h-12 mb-4 text-blue-600 animate-pulse" />
+            <h3 className="text-xl font-bold mb-2 text-blue-800">Application Pending</h3>
+            <p className="max-w-md mb-6 opacity-80 text-blue-700">
+              Your registration is currently under review by the election administrators. 
+              This process usually takes 24-48 hours. Please check back later.
             </p>
+            <div className="text-sm font-medium text-blue-600 bg-white px-4 py-2 rounded-full border border-blue-100 shadow-sm">
+              Status: Waiting for Admin Approval
+            </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {candidates.map((candidate) => (
-              <CandidateCard key={candidate.id} candidate={candidate} />
-            ))}
-          </div>
+          <>
+            {/* Candidates / Connect prompt */}
+            {!currentAccount ? (
+              <div className="flex flex-col items-center justify-center p-12 rounded-2xl border border-dashed transition-colors" 
+                   style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
+                <Wallet className="w-12 h-12 mb-4 opacity-50" style={{ color: 'var(--text-color)' }} />
+                <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-color)' }}>Wallet Required</h3>
+                <p className="text-center max-w-md mb-6 opacity-70" style={{ color: 'var(--text-color)' }}>
+                  Connect your MetaMask wallet to view candidates and cast your vote.
+                </p>
+                <button
+                  onClick={connectWallet}
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg
+                             font-medium transition-colors"
+                >
+                  Connect MetaMask
+                </button>
+              </div>
+            ) : candidates.length === 0 ? (
+              <div className="text-center p-12 rounded-2xl border transition-colors" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
+                <p className="opacity-70" style={{ color: 'var(--text-color)' }}>
+                  {isAdmin
+                    ? 'No candidates yet. Use the Admin Panel above to add candidates.'
+                    : 'No candidates found for this election.'}
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {candidates.map((candidate) => (
+                  <CandidateCard key={candidate.id} candidate={candidate} />
+                ))}
+              </div>
+            )}
+          </>
         )}
       </main>
     </div>

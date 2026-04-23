@@ -14,20 +14,54 @@ const registerUser = async (req, res, next) => {
       throw new Error('Wallet address is required for registration');
     }
 
-    const userExists = await User.findOne({ $or: [{ email }, { idNumber }, { walletAddress }] });
+    let user = await User.findOne({ 
+      $or: [
+        { email }, 
+        { idNumber }, 
+        { walletAddress }
+      ] 
+    });
 
-    if (userExists) {
-      res.status(400);
-      throw new Error('User already exists with provided details');
+    if (user) {
+      if (user.status === 'registered') {
+        res.status(400);
+        throw new Error('This identity is already registered and authorized to vote.');
+      }
+
+      if (user.status === 'blocked') {
+        res.status(403);
+        throw new Error('This account has been permanently blocked.');
+      }
+
+      // If user is pending or rejected, we update their basic info and allow them to proceed
+      user.name = name;
+      user.email = email;
+      user.idNumber = idNumber;
+      user.walletAddress = walletAddress;
+      
+      // If they were rejected, resetting to pending as they are now "resubmitting"
+      if (user.status === 'rejected') {
+        user.status = 'pending';
+        user.rejectionReason = undefined;
+      }
+      
+      await user.save();
+
+      return res.status(200).json({
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        status: user.status,
+        message: user.status === 'pending' ? 'Identity updated. Please proceed to upload documents.' : 'Resubmission started. Please upload your documents.',
+      });
     }
 
-    const user = await User.create({
+    user = await User.create({
       name,
       email,
       idNumber,
       walletAddress,
       status: 'pending',
-      // Document is uploaded in the next step
       documentPath: 'pending_upload', 
     });
 
@@ -62,10 +96,11 @@ const loginUser = async (req, res, next) => {
       throw new Error('User not found');
     }
 
-    // STRICT FLOW: User MUST be approved
-    if (user.status !== 'approved') {
+    // Allow login for pending and rejected users to see their status
+    // Only blocked users are strictly forbidden
+    if (user.status === 'blocked') {
       res.status(403);
-      throw new Error(`Cannot login. Current status: ${user.status}`);
+      throw new Error('Access denied. This account has been permanently blocked.');
     }
 
     // Generate OTP
@@ -119,6 +154,7 @@ const verifyOtp = async (req, res, next) => {
       name: user.name,
       email: user.email,
       status: user.status,
+      rejectionReason: user.rejectionReason,
       role: user.role,
       walletAddress: user.walletAddress,
       token: generateToken(user._id),

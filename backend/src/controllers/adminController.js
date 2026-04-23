@@ -6,8 +6,8 @@ const { registerVoterOnChain, startElectionOnChain, endElectionOnChain, addCandi
 // @access  Private/Admin
 const getPendingUsers = async (req, res, next) => {
   try {
-    // We fetch 'verified' users since they passed OCR and are waiting for admin
-    const pendingUsers = await User.find({ status: 'verified' }).select('-otp -otpExpires');
+    // We fetch 'pending' users since they completed upload and are waiting for admin
+    const pendingUsers = await User.find({ status: 'pending', documentPath: { $ne: 'pending_upload' } }).select('-otp -otpExpires');
 
     res.json(pendingUsers);
   } catch (error) {
@@ -27,9 +27,9 @@ const approveUser = async (req, res, next) => {
       throw new Error('User not found');
     }
 
-    if (user.status !== 'verified') {
+    if (user.status !== 'pending') {
       res.status(400);
-      throw new Error(`Cannot approve user with status: ${user.status}. Must be 'verified'.`);
+      throw new Error(`Cannot approve user with status: ${user.status}. Must be 'pending'.`);
     }
 
     if (!user.walletAddress) {
@@ -37,7 +37,8 @@ const approveUser = async (req, res, next) => {
       throw new Error('Wallet not connected');
     }
 
-    user.status = 'approved';
+    user.status = 'registered';
+    user.rejectionReason = undefined;
 
     // Register on blockchain
     const result = await registerVoterOnChain(user.walletAddress);
@@ -62,6 +63,13 @@ const approveUser = async (req, res, next) => {
 // @access  Private/Admin
 const rejectUser = async (req, res, next) => {
   try {
+    const { reason } = req.body;
+    
+    if (!reason) {
+      res.status(400);
+      throw new Error('Rejection reason is required');
+    }
+
     const user = await User.findById(req.params.id);
 
     if (!user) {
@@ -69,15 +77,33 @@ const rejectUser = async (req, res, next) => {
       throw new Error('User not found');
     }
 
-    if (user.status === 'rejected') {
-      res.status(400);
-      throw new Error('User is already rejected');
-    }
-
     user.status = 'rejected';
+    user.rejectionReason = reason;
     await user.save();
 
-    res.json({ message: 'User rejected successfully', status: user.status });
+    res.json({ message: 'User rejected successfully', status: user.status, reason });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Block a user permanently
+// @route   POST /api/admin/block/:id
+// @access  Private/Admin
+const blockUser = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      res.status(404);
+      throw new Error('User not found');
+    }
+
+    user.status = 'blocked';
+    user.rejectionReason = 'Permanently blocked by administrator';
+    await user.save();
+
+    res.json({ message: 'User blocked permanently', status: user.status });
   } catch (error) {
     next(error);
   }
@@ -129,6 +155,7 @@ module.exports = {
   getPendingUsers,
   approveUser,
   rejectUser,
+  blockUser,
   startElection,
   endElection,
   addCandidate

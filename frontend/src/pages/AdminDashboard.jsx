@@ -76,12 +76,32 @@ const AdminDashboard = () => {
 
   const handleReject = async (id) => {
     try {
-      if (!window.confirm("Are you sure you want to reject this user?")) return;
-      await API.post(`/admin/reject/${id}`);
-      toast.success('User rejected from system');
+      const reason = window.prompt("Please provide a reason for rejection:");
+      if (!reason) return; // Cancel if no reason provided
+
+      setLoading(true);
+      await API.post(`/admin/reject/${id}`, { reason });
+      toast.success('User rejected with reason');
       fetchUsers();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to reject user');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleBlock = async (id) => {
+    try {
+      if (!window.confirm("Are you sure you want to PERMANENTLY BLOCK this user? They will be barred from the system forever.")) return;
+      
+      setLoading(true);
+      await API.post(`/admin/block/${id}`);
+      toast.success('User permanently blocked');
+      fetchUsers();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to block user');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -359,10 +379,18 @@ const AdminDashboard = () => {
                           <button
                             onClick={() => handleReject(u._id)}
                             disabled={loading}
-                            className="bg-rose-500 hover:bg-rose-600 disabled:opacity-50 text-white p-2 rounded-lg transition-all shadow-md shadow-rose-100"
+                            className="bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white p-2 rounded-lg transition-all shadow-md shadow-orange-100"
                             title="Reject Applicant"
                           >
                             <XCircle className="w-5 h-5" />
+                          </button>
+                          <button
+                            onClick={() => handleBlock(u._id)}
+                            disabled={loading}
+                            className="bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white p-2 rounded-lg transition-all shadow-md shadow-rose-200"
+                            title="Permanently Block"
+                          >
+                            <AlertCircle className="w-5 h-5" />
                           </button>
                         </div>
                       </td>

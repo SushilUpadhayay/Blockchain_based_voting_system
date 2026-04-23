@@ -22,8 +22,11 @@ const userSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['pending', 'verified', 'approved', 'rejected'],
+      enum: ['pending', 'registered', 'rejected', 'blocked'],
       default: 'pending',
+    },
+    rejectionReason: {
+      type: String,
     },
     walletAddress: {
       type: String,
