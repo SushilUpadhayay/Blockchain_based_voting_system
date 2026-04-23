@@ -1,5 +1,5 @@
 const User = require('../models/User');
-const { registerVoterOnChain } = require('../services/blockchainService');
+const { registerVoterOnChain, startElectionOnChain, endElectionOnChain, addCandidateOnChain } = require('../services/blockchainService');
 
 // @desc    Get all verified users waiting for admin approval
 // @route   GET /api/admin/pending-users
@@ -83,8 +83,53 @@ const rejectUser = async (req, res, next) => {
   }
 };
 
+// @desc    Start the election
+// @route   POST /api/admin/start-election
+// @access  Private/Admin
+const startElection = async (req, res, next) => {
+  try {
+    await startElectionOnChain();
+    res.json({ message: 'Election started successfully on blockchain' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    End the election
+// @route   POST /api/admin/end-election
+// @access  Private/Admin
+const endElection = async (req, res, next) => {
+  try {
+    await endElectionOnChain();
+    res.json({ message: 'Election ended successfully on blockchain' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Add a new candidate
+// @route   POST /api/admin/add-candidate
+// @access  Private/Admin
+const addCandidate = async (req, res, next) => {
+  try {
+    const { name } = req.body;
+    if (!name) {
+      res.status(400);
+      throw new Error("Candidate name is required");
+    }
+    await addCandidateOnChain(name);
+    res.json({ message: 'Candidate added successfully to blockchain' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+
 module.exports = {
   getPendingUsers,
   approveUser,
   rejectUser,
+  startElection,
+  endElection,
+  addCandidate
 };

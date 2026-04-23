@@ -7,19 +7,25 @@ const { generateOTP, sendOTP } = require('../services/otpService');
 // @access  Public
 const registerUser = async (req, res, next) => {
   try {
-    const { name, email, idNumber } = req.body;
+    const { name, email, idNumber, walletAddress } = req.body;
 
-    const userExists = await User.findOne({ $or: [{ email }, { idNumber }] });
+    if (!walletAddress) {
+      res.status(400);
+      throw new Error('Wallet address is required for registration');
+    }
+
+    const userExists = await User.findOne({ $or: [{ email }, { idNumber }, { walletAddress }] });
 
     if (userExists) {
       res.status(400);
-      throw new Error('User with this email or ID number already exists');
+      throw new Error('User already exists with provided details');
     }
 
     const user = await User.create({
       name,
       email,
       idNumber,
+      walletAddress,
       status: 'pending',
       // Document is uploaded in the next step
       documentPath: 'pending_upload', 
@@ -114,6 +120,7 @@ const verifyOtp = async (req, res, next) => {
       email: user.email,
       status: user.status,
       role: user.role,
+      walletAddress: user.walletAddress,
       token: generateToken(user._id),
     });
   } catch (error) {

@@ -52,16 +52,16 @@ const UploadDocument = () => {
 
   if (isUploaded) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
-        <div className="max-w-md w-full bg-white p-8 rounded-xl shadow-md border border-gray-100 text-center">
+      <div className="min-h-screen flex items-center justify-center p-6 transition-colors duration-300" style={{ backgroundColor: 'var(--bg-color)' }}>
+        <div className="max-w-md w-full p-8 rounded-xl shadow-md border transition-colors duration-300" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
           <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <CheckCircle2 className="w-8 h-8 text-blue-600" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Waiting for Approval</h2>
-          <p className="text-gray-500 mb-6">
+          <h2 className="text-2xl font-bold mb-2 text-center" style={{ color: 'var(--text-color)' }}>Waiting for Approval</h2>
+          <p className="mb-6 text-center opacity-70" style={{ color: 'var(--text-color)' }}>
             Your document has been uploaded securely. An admin will review it shortly. You won't be able to log in until your account is approved.
           </p>
-          <p className="text-sm text-gray-400">
+          <p className="text-sm text-center opacity-50" style={{ color: 'var(--text-color)' }}>
             Please check back later or wait for a notification.
           </p>
         </div>
@@ -70,20 +70,21 @@ const UploadDocument = () => {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
-      <div className="max-w-md w-full bg-white p-8 rounded-xl shadow-md border border-gray-100">
-        <h2 className="text-2xl font-bold text-gray-900 mb-6 text-center">Upload ID Document</h2>
-        <p className="text-gray-500 mb-6 text-center text-sm">We need to verify your identity before you can participate in the election.</p>
+    <div className="min-h-screen flex items-center justify-center p-6 transition-colors duration-300" style={{ backgroundColor: 'var(--bg-color)' }}>
+      <div className="max-w-md w-full p-8 rounded-xl shadow-md border transition-colors duration-300" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
+        <h2 className="text-2xl font-bold mb-6 text-center" style={{ color: 'var(--text-color)' }}>Upload ID Document</h2>
+        <p className="mb-6 text-center text-sm opacity-70" style={{ color: 'var(--text-color)' }}>We need to verify your identity before you can participate in the election.</p>
         <form onSubmit={handleUpload} className="space-y-6">
-          <div className="flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-lg p-6 bg-gray-50 hover:bg-gray-100 cursor-pointer transition-colors relative">
+          <div className="flex flex-col items-center justify-center border-2 border-dashed rounded-lg p-6 cursor-pointer transition-colors relative" 
+               style={{ backgroundColor: 'var(--bg-color)', borderColor: 'var(--border-color)' }}>
             <input 
               type="file" 
               onChange={handleFileChange} 
               accept=".jpg,.jpeg,.png,.pdf"
               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
             />
-            <UploadCloud className="w-10 h-10 text-gray-400 mb-2" />
-            <span className="text-sm text-gray-600 font-medium">
+            <UploadCloud className="w-10 h-10 mb-2 opacity-50" style={{ color: 'var(--text-color)' }} />
+            <span className="text-sm font-medium" style={{ color: 'var(--text-color)' }}>
               {file ? file.name : "Click or drag to upload document"}
             </span>
           </div>

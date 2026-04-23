@@ -9,13 +9,15 @@ import UploadDocument from './pages/UploadDocument';
 import Login from './pages/Login';
 import VerifyOtp from './pages/VerifyOtp';
 import Dashboard from './pages/Dashboard';
+import AdminDashboard from './pages/AdminDashboard';
+import ProtectedRoute from './components/ProtectedRoute';
 
 function AppContent() {
   const location = useLocation();
-  const isDashboard = location.pathname === '/dashboard';
+  const isDashboard = location.pathname === '/dashboard' || location.pathname === '/admin';
 
   return (
-    <div className="flex flex-col min-h-screen bg-gray-50">
+    <div className="flex flex-col min-h-screen transition-colors duration-300" style={{ backgroundColor: 'var(--bg-color)' }}>
       {!isDashboard && <Navbar />}
       <div className="flex-1">
         <Routes>
@@ -24,7 +26,24 @@ function AppContent() {
           <Route path="/upload" element={<UploadDocument />} />
           <Route path="/login" element={<Login />} />
           <Route path="/verify-otp" element={<VerifyOtp />} />
-          <Route path="/dashboard" element={<Dashboard />} />
+          
+          <Route 
+            path="/dashboard" 
+            element={
+              <ProtectedRoute>
+                <Dashboard />
+              </ProtectedRoute>
+            } 
+          />
+          
+          <Route 
+            path="/admin" 
+            element={
+              <ProtectedRoute adminOnly={true}>
+                <AdminDashboard />
+              </ProtectedRoute>
+            } 
+          />
         </Routes>
       </div>
     </div>

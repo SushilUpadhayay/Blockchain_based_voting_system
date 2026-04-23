@@ -3,6 +3,7 @@ import { useVoting } from '../context/VotingContext';
 import CandidateCard from './CandidateCard';
 import AdminPanel from './AdminPanel';
 import { Wallet, Activity, RefreshCw, AlertTriangle, ServerCrash } from 'lucide-react';
+import ThemeToggle from './ThemeToggle';
 
 const Dashboard = () => {
   const {
@@ -21,7 +22,7 @@ const Dashboard = () => {
   } = useVoting();
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="min-h-screen flex flex-col transition-colors duration-300" style={{ backgroundColor: 'var(--bg-color)' }}>
 
       {/* ── Network Error Banner ───*/}
       {currentAccount && !networkOk && (
@@ -53,21 +54,25 @@ const Dashboard = () => {
       )}
 
       {/* ── Navbar ──*/}
-      <nav className="bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center sticky top-0 z-10">
+      <nav className="border-b px-6 py-4 flex justify-between items-center sticky top-0 z-10 shadow-sm transition-colors duration-300"
+           style={{ backgroundColor: 'var(--nav-bg)', borderColor: 'var(--border-color)' }}>
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
             <Activity className="text-white w-5 h-5" />
           </div>
-          <span className="text-xl font-bold tracking-tight text-gray-900">VoteChain</span>
+          <span className="text-xl font-bold tracking-tight" style={{ color: 'var(--text-color)' }}>VoteChain</span>
           <span className="ml-2 text-xs font-mono text-gray-400 hidden sm:block">
             Hardhat Local · chainId {REQUIRED_CHAIN_ID}
           </span>
         </div>
 
-        {currentAccount ? (
-          <div className="flex items-center gap-3 bg-gray-100 px-4 py-2 rounded-full border border-gray-200">
+        <div className="flex items-center gap-4">
+          <ThemeToggle />
+          {currentAccount ? (
+            <div className="flex items-center gap-3 px-4 py-2 rounded-full border transition-colors" 
+                 style={{ backgroundColor: 'var(--bg-color)', borderColor: 'var(--border-color)' }}>
             <div className={`w-2 h-2 rounded-full ${networkOk ? 'bg-green-500' : 'bg-red-500'}`} />
-            <span className="text-sm font-medium text-gray-700">
+            <span className="text-sm font-medium" style={{ color: 'var(--text-color)' }}>
               {currentAccount.slice(0, 6)}…{currentAccount.slice(-4)}
             </span>
             {isAdmin && (
@@ -76,16 +81,17 @@ const Dashboard = () => {
               </span>
             )}
           </div>
-        ) : (
-          <button
-            onClick={connectWallet}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white
-                       px-5 py-2.5 rounded-lg text-sm font-medium transition-colors shadow-sm"
-          >
-            <Wallet className="w-4 h-4" />
-            Connect Wallet
-          </button>
-        )}
+          ) : (
+            <button
+              onClick={connectWallet}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white
+                         px-5 py-2.5 rounded-lg text-sm font-medium transition-colors shadow-sm"
+            >
+              <Wallet className="w-4 h-4" />
+              Connect Wallet
+            </button>
+          )}
+        </div>
       </nav>
 
       {/* ── Main ───*/}
@@ -94,48 +100,50 @@ const Dashboard = () => {
         {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-1">Live Election</h1>
-            <p className="text-gray-500">Cast your vote securely on the blockchain. One wallet, one vote.</p>
+            <h1 className="text-3xl font-bold mb-1" style={{ color: 'var(--text-color)' }}>Blockchain Ballot</h1>
+            <p className="opacity-70" style={{ color: 'var(--text-color)' }}>Your vote is anonymous, transparent, and immutable.</p>
           </div>
 
           <div className="flex items-center gap-4">
             <div
-              className={`px-4 py-2 rounded-lg text-sm font-medium border flex items-center gap-2
-                ${electionStatus.active
-                  ? 'bg-green-50 text-green-700 border-green-200'
-                  : 'bg-yellow-50 text-yellow-700 border-yellow-200'}`}
+              className={`px-4 py-2 rounded-lg text-sm font-bold border flex items-center gap-2
+                ${!electionStatus.started 
+                  ? 'bg-gray-100 text-gray-600 border-gray-200' 
+                  : electionStatus.active
+                    ? 'bg-green-50 text-green-700 border-green-200'
+                    : 'bg-red-50 text-red-700 border-red-200'}`}
             >
               <div
-                className={`w-2 h-2 rounded-full ${electionStatus.active ? 'bg-green-600 animate-pulse' : 'bg-yellow-600'}`}
+                className={`w-2 h-2 rounded-full ${!electionStatus.started ? 'bg-gray-400' : electionStatus.active ? 'bg-green-600 animate-pulse' : 'bg-red-600'}`}
               />
               {!electionStatus.started
-                ? 'Not Started'
+                ? 'ELECTION NOT STARTED'
                 : electionStatus.active
-                  ? 'Voting Active'
-                  : 'Voting Ended'}
+                  ? 'VOTING LIVE'
+                  : 'ELECTION CLOSED'}
             </div>
 
             <button
               onClick={() => loadCandidates()}
               disabled={isLoading}
               title="Refresh Results"
-              className="p-2 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg
-                         transition-colors border border-gray-200 bg-white shadow-sm"
+              className="p-2 opacity-70 hover:opacity-100 rounded-lg transition-colors border shadow-sm"
+              style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-color)', borderColor: 'var(--border-color)' }}
             >
               <RefreshCw className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} />
             </button>
           </div>
         </div>
 
-        {/* Admin Panel — only when connected + is admin */}
-        {currentAccount && isAdmin && <AdminPanel />}
+        {/* Removed AdminPanel from here as admins use /admin route */}
 
         {/* Candidates / Connect prompt */}
         {!currentAccount ? (
-          <div className="flex flex-col items-center justify-center p-12 bg-white rounded-2xl border border-dashed border-gray-300">
-            <Wallet className="w-12 h-12 text-gray-400 mb-4" />
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Wallet Required</h3>
-            <p className="text-gray-500 text-center max-w-md mb-6">
+          <div className="flex flex-col items-center justify-center p-12 rounded-2xl border border-dashed transition-colors" 
+               style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
+            <Wallet className="w-12 h-12 mb-4 opacity-50" style={{ color: 'var(--text-color)' }} />
+            <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-color)' }}>Wallet Required</h3>
+            <p className="text-center max-w-md mb-6 opacity-70" style={{ color: 'var(--text-color)' }}>
               Connect your MetaMask wallet to view candidates and cast your vote.
             </p>
             <button
@@ -147,8 +155,8 @@ const Dashboard = () => {
             </button>
           </div>
         ) : candidates.length === 0 ? (
-          <div className="text-center p-12 bg-white rounded-2xl border border-gray-200">
-            <p className="text-gray-500">
+          <div className="text-center p-12 rounded-2xl border transition-colors" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
+            <p className="opacity-70" style={{ color: 'var(--text-color)' }}>
               {isAdmin
                 ? 'No candidates yet. Use the Admin Panel above to add candidates.'
                 : 'No candidates found for this election.'}
