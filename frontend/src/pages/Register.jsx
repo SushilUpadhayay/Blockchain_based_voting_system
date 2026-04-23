@@ -57,6 +57,9 @@ const Register = () => {
       const response = await API.post('/auth/register', {
         name: formData.name,
         email: formData.email,
+        phone: formData.phone,
+        dob: formData.dob,
+        address: formData.address,
         idNumber: formData.idNumber,
         walletAddress: address
       });
@@ -69,8 +72,8 @@ const Register = () => {
       localStorage.setItem("userId", userId);
       console.log("Saved userId:", userId);
 
-      toast.success("Registration successful! Please upload your document.");
-      navigate('/upload');
+      toast.success("Registration successful! OTP sent to your phone.");
+      navigate('/verify-otp', { state: { email: formData.email } });
     } catch (error) {
       console.error("Register Error:", error.response?.data || error.message);
       toast.error(error.response?.data?.message || "Registration failed.");

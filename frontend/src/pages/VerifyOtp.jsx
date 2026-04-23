@@ -32,6 +32,8 @@ const VerifyOtp = () => {
         toast.success("Successfully logged in!");
         if (userData.role === 'admin') {
           navigate('/admin');
+        } else if (userData.status === 'verified') {
+          navigate('/upload');
         } else {
           navigate('/dashboard');
         }

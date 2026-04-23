@@ -12,7 +12,7 @@ const sendOTP = async (user, otp) => {
   return new Promise((resolve) => {
     // Simulate sending an SMS or email
     setTimeout(() => {
-      console.log(`[OTP SERVICE] Sent OTP ${otp} to user ${user.name} (${user.email || user.phone})`);
+      console.log(`[OTP SERVICE] Sent OTP to user ${user.name}`);
       resolve(true);
     }, 500);
   });

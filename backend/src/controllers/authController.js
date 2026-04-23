@@ -1,43 +1,56 @@
 const User = require('../models/User');
 const generateToken = require('../utils/generateToken');
-const { generateOTP, sendOTP } = require('../services/otpService');
+const { generateOTP } = require('../services/otpService');
+const { sendOTP } = require('../services/smsService');
 
 // @desc    Register a new user
 // @route   POST /api/auth/register
 // @access  Public
 const registerUser = async (req, res, next) => {
   try {
-    const { name, email, idNumber, walletAddress } = req.body;
+    const { name, email, phone, idNumber, dob, address, walletAddress } = req.body;
 
     if (!walletAddress) {
       res.status(400);
       throw new Error('Wallet address is required for registration');
     }
 
-    const userExists = await User.findOne({ $or: [{ email }, { idNumber }, { walletAddress }] });
+    const userExists = await User.findOne({ $or: [{ email }, { phone }, { idNumber }, { walletAddress }] });
 
     if (userExists) {
       res.status(400);
       throw new Error('User already exists with provided details');
     }
 
+    // Generate OTP for registration verification
+    const otp = generateOTP();
+    const otpExpires = Date.now() + 5 * 60 * 1000; // 5 minutes
+
     const user = await User.create({
       name,
       email,
+      phone,
       idNumber,
+      dob,
+      address,
       walletAddress,
       status: 'pending',
-      // Document is uploaded in the next step
-      documentPath: 'pending_upload', 
+      documentPath: 'pending_upload',
+      otp,
+      otpExpires
     });
 
     if (user) {
+      // Send OTP via SMS
+      await sendOTP(phone, otp);
+
       res.status(201).json({
         _id: user._id,
         name: user.name,
         email: user.email,
+        phone: user.phone,
         status: user.status,
-        message: 'Registration successful. Please proceed to upload your ID document.',
+        message: 'Registration successful. OTP sent to your phone.',
       });
     } else {
       res.status(400);
@@ -71,10 +84,11 @@ const loginUser = async (req, res, next) => {
     // Generate OTP
     const otp = generateOTP();
     user.otp = otp;
-    user.otpExpires = Date.now() + 10 * 60 * 1000; // 10 minutes from now
+    user.otpExpires = Date.now() + 5 * 60 * 1000; // 5 minutes
+    user.otpAttempts = 0; // Reset attempts on new OTP request
     await user.save();
 
-    await sendOTP(user, otp);
+    await sendOTP(user.phone, otp);
 
     res.json({
       message: 'OTP sent successfully',
@@ -99,9 +113,16 @@ const verifyOtp = async (req, res, next) => {
       throw new Error('User not found');
     }
 
+    if (user.otpAttempts >= 5) {
+      res.status(403);
+      throw new Error('Too many failed attempts. Please request a new OTP.');
+    }
+
     if (user.otp !== otp) {
+      user.otpAttempts += 1;
+      await user.save();
       res.status(401);
-      throw new Error('Invalid OTP');
+      throw new Error(`Invalid OTP. ${5 - user.otpAttempts} attempts remaining.`);
     }
 
     if (user.otpExpires < Date.now()) {
@@ -109,9 +130,16 @@ const verifyOtp = async (req, res, next) => {
       throw new Error('OTP expired');
     }
 
-    // Clear OTP after successful use
+    // Clear OTP and reset attempts after successful use
     user.otp = undefined;
     user.otpExpires = undefined;
+    user.otpAttempts = 0;
+    
+    // Mark user as verified if they were pending
+    if (user.status === 'pending') {
+      user.status = 'verified';
+    }
+    
     await user.save();
 
     res.json({
