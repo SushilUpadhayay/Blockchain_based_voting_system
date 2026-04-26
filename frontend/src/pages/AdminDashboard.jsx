@@ -26,7 +26,6 @@ const AdminDashboard = () => {
     addCandidate,
     startElection,
     endElection,
-    authorizeVoter,
     electionStatus,
     isLoading: blockchainLoading,
     candidates,
@@ -36,7 +35,6 @@ const AdminDashboard = () => {
 
   const [users, setUsers] = useState([]);
   const [candidateName, setCandidateName] = useState('');
-  const [voterAddress, setVoterAddress] = useState('');
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
 
@@ -54,9 +52,8 @@ const AdminDashboard = () => {
     }
   }, [user]);
 
-  if (user?.role !== 'admin') {
-    return <Navigate to="/login" replace />;
-  }
+  // ProtectedRoute handles redirection, so we don't need the redundant check here
+  // which might trigger during rehydration on refresh.
 
   const fetchUsers = async () => {
     setFetching(true);
@@ -119,15 +116,7 @@ const AdminDashboard = () => {
     await endElection();
   };
 
-  const handleAuthorizeVoter = async (e) => {
-    e.preventDefault();
-    const addr = voterAddress.trim();
-    if (!addr.startsWith('0x') || addr.length !== 42) {
-      return toast.error('Please enter a valid Ethereum wallet address');
-    }
-    await authorizeVoter(addr);
-    setVoterAddress('');
-  };
+
 
   const handleStartElection = async () => {
     if (candidates.length === 0) {
@@ -222,6 +211,13 @@ const AdminDashboard = () => {
               </button>
             )}
             <button
+              onClick={() => window.location.reload()}
+              className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+              title="Reload Page"
+            >
+              <RefreshCw className="w-5 h-5 text-blue-500" />
+            </button>
+            <button
               onClick={fetchUsers}
               className="p-2 hover:bg-gray-100 rounded-full transition-colors"
               title="Refresh Data"
@@ -268,55 +264,6 @@ const AdminDashboard = () => {
                 Wallet connection required for admin actions
               </p>
             )}
-          </section>
-
-          {/* SEC D: MANUAL AUTHORIZATION */}
-          <section
-            className="p-6 rounded-2xl shadow-sm border hover:shadow-md transition-all"
-            style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}
-          >
-            <div className="flex items-center gap-2 mb-6">
-              <div className="p-2 bg-amber-50 rounded-lg">
-                <ShieldCheck className="w-5 h-5 text-amber-600" />
-              </div>
-              <h2 className="text-xl font-bold" style={{ color: 'var(--text-color)' }}>
-                Manual Authorization
-              </h2>
-            </div>
-            <form onSubmit={handleAuthorizeVoter} className="space-y-4">
-              <div>
-                <label
-                  className="block text-xs font-bold opacity-50 uppercase tracking-widest mb-2"
-                  style={{ color: 'var(--text-color)' }}
-                >
-                  Wallet Address
-                </label>
-                <input
-                  type="text"
-                  placeholder="0x..."
-                  value={voterAddress}
-                  onChange={(e) => setVoterAddress(e.target.value)}
-                  disabled={blockchainLoading || !currentAccount}
-                  className="w-full border p-3 rounded-xl outline-none focus:ring-4 focus:ring-amber-100 focus:border-amber-400 transition-all text-sm font-mono"
-                  style={{
-                    backgroundColor: 'var(--bg-color)',
-                    color: 'var(--text-color)',
-                    borderColor: 'var(--border-color)',
-                  }}
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={blockchainLoading || !voterAddress.trim() || !currentAccount}
-                className="w-full bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white font-bold py-3 px-4 rounded-xl transition-all shadow-lg shadow-amber-100 flex items-center justify-center gap-2"
-              >
-                <UserPlus className="w-4 h-4" />
-                Authorize Voter
-              </button>
-            </form>
-            <p className="mt-4 text-xs text-gray-400 leading-relaxed italic">
-              * Bypass the registration workflow by manually white-listing a wallet address.
-            </p>
           </section>
 
           {/* SEC C: CANDIDATE MANAGEMENT */}
@@ -376,6 +323,28 @@ const AdminDashboard = () => {
               </form>
             )}
 
+            {/* Candidates List */}
+            {candidates.length > 0 && (
+              <div className="mt-6 border rounded-xl overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
+                <table className="min-w-full divide-y divide-gray-100">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="py-3 px-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">ID</th>
+                      <th className="py-3 px-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Candidate Name</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y" style={{ borderColor: 'var(--border-color)' }}>
+                    {candidates.map(candidate => (
+                      <tr key={candidate.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="py-3 px-4 text-sm font-medium text-gray-500">#{candidate.id}</td>
+                        <td className="py-3 px-4 text-sm font-semibold" style={{ color: 'var(--text-color)' }}>{candidate.name}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
             <div className="mt-8 flex items-start gap-3 p-4 bg-blue-50 rounded-xl">
               <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" />
               <p className="text-sm text-blue-800">
@@ -402,9 +371,19 @@ const AdminDashboard = () => {
                 Voter Verification Requests
               </h2>
             </div>
-            <span className="bg-gray-100 text-gray-600 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">
-              {users.length} Pending
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="bg-gray-100 text-gray-600 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">
+                {users.length} Pending
+              </span>
+              <button
+                onClick={() => window.location.reload()}
+                className="flex items-center gap-2 text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-all"
+                title="Refresh Page"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Refresh Page
+              </button>
+            </div>
           </div>
 
           <div className="overflow-x-auto">

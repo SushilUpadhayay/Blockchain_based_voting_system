@@ -245,25 +245,7 @@ export const VotingProvider = ({ children }) => {
     }
   };
 
-  const authorizeVoter = async (voterAddress) => {
-    const toastId = 'authorizeVoter';
-    try {
-      setIsLoading(true);
-      const contract = await getContract();
-      if (!contract) return;
 
-      toast.loading('Authorizing voter…', { id: toastId });
-      const tx = await contract.authorizeVoter(voterAddress);
-      await tx.wait();
-
-      toast.success('Voter authorized!', { id: toastId });
-    } catch (err) {
-      console.error('[VotingContext] authorizeVoter error:', err);
-      toast.error(err.reason ?? err.message ?? 'Authorization failed.', { id: toastId });
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const startElection = async () => {
     const toastId = 'startElection';
@@ -356,8 +338,9 @@ export const VotingProvider = ({ children }) => {
         pendingCandidateId,
         vote,
         loadCandidates,
+        loadInitialData,
         addCandidate,
-        authorizeVoter,
+
         startElection,
         endElection,
       }}

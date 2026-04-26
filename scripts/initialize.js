@@ -42,47 +42,14 @@ async function main() {
     return;
   }
 
-  // ── Step 1: Add candidates ──
-  console.log("\n── Adding Candidates ──");
-  const candidates = ["Alice", "Bob", "Charlie"];
-
-  for (const name of candidates) {
-    const tx = await voting.addCandidate(name);
-    await tx.wait();
-    console.log(`  ✅ ${name} added`);
-  }
-
-  // ── Step 2: Authorize voters ────
-  console.log("\n── Authorizing Voters ──");
-  const votersToAuthorize = [
-    { signer: admin, label: "Admin  (Account #0)" },
-    { signer: voter1, label: "Voter1 (Account #1)" },
-    { signer: voter2, label: "Voter2 (Account #2)" },
-  ];
-
-  for (const { signer, label } of votersToAuthorize) {
-    const tx = await voting.authorizeVoter(signer.address);
-    await tx.wait();
-    console.log(`${label} authorized`);
-  }
-
-  // ── Step 3: Start election ──
-  console.log("\n── Starting Election ──");
-  const startTx = await voting.startElection();
-  await startTx.wait();
-  console.log("  ✅ Election is now ACTIVE");
-
-  // ── Summary ──
+  // ── No auto-initialization ──
   console.log("\n" + "=".repeat(50));
   console.log("  Initialization Complete");
   console.log("=".repeat(50));
-  console.log("\nCandidates : Alice, Bob, Charlie");
-  console.log("Voters     : Accounts #0, #1, #2");
-  console.log("Status     : ACTIVE\n");
-  console.log("Import any of these accounts into MetaMask to vote:");
+  console.log("\nStatus: Contract connected and waiting for Admin configuration.");
+  console.log("Please use the Admin Dashboard to add candidates and start the election.");
+  console.log("\nAdmin account is ready for use:");
   console.log(`  Account #0: ${admin.address}`);
-  console.log(`  Account #1: ${voter1.address}`);
-  console.log(`  Account #2: ${voter2.address}`);
   console.log(
     "\nPrivate keys are printed by `npx hardhat node` — copy from that terminal.\n"
   );

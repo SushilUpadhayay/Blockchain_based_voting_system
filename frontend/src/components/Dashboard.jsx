@@ -1,7 +1,7 @@
 import React from 'react';
 import { useVoting } from '../context/VotingContext';
 import CandidateCard from './CandidateCard';
-import AdminPanel from './AdminPanel';
+
 import { Wallet, Activity, RefreshCw, AlertTriangle, ServerCrash, LogOut } from 'lucide-react';
 import ThemeToggle from './ThemeToggle';
 import { useAuth } from '../context/AuthContext';
@@ -14,8 +14,8 @@ const Dashboard = () => {
     candidates,
     electionStatus,
     loadCandidates,
+    loadInitialData,
     isLoading,
-    isAdmin,
     networkOk,
     networkError,
     contractFound,
@@ -24,6 +24,8 @@ const Dashboard = () => {
   } = useVoting();
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+
+  const isAdminRole = user?.role === 'admin';
 
   const status = user?.status || 'pending';
   const rejectionReason = user?.rejectionReason || 'No reason provided';
@@ -90,7 +92,7 @@ const Dashboard = () => {
               <span className="text-sm font-medium" style={{ color: 'var(--text-color)' }}>
                 {currentAccount.slice(0, 6)}…{currentAccount.slice(-4)}
               </span>
-              {isAdmin && (
+              {isAdminRole && (
                 <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
                   Admin
                 </span>
@@ -149,7 +151,7 @@ const Dashboard = () => {
             </div>
 
             <button
-              onClick={() => loadCandidates()}
+              onClick={() => loadInitialData(currentAccount)}
               disabled={isLoading}
               title="Refresh Results"
               className="p-2 opacity-70 hover:opacity-100 rounded-lg transition-colors border shadow-sm"
@@ -226,7 +228,7 @@ const Dashboard = () => {
               >
                 <p className="opacity-70" style={{ color: 'var(--text-color)' }}>
                   No candidates found for this election.
-                  {isAdmin && (
+                  {isAdminRole && (
                     <span> Add candidates from the <a href="/admin" className="text-blue-600 font-medium hover:underline">Admin Panel</a>.</span>
                   )}
                 </p>

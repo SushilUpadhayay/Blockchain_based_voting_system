@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const { 
-  registerUser, 
+  registerInit, 
+  verifyRegisterOtp,
   loginUser, 
   verifyOtp, 
   requestVoteOTP, 
@@ -9,7 +10,8 @@ const {
 } = require('../controllers/authController');
 const { protect } = require('../middleware/auth');
 
-router.post('/register', registerUser);
+router.post('/register-init', registerInit);
+router.post('/verify-register-otp', verifyRegisterOtp);
 router.post('/login', loginUser);
 router.post('/verify-otp', verifyOtp);
 
