@@ -11,7 +11,7 @@ export const AuthProvider = ({ children }) => {
 
   const isAuthenticated = !!token;
 
-  // ── Token helpers ─────────────────────────────────────────────────────────
+  // ── Token helpers
   const setToken = (newToken) => {
     setTokenState(newToken);
     if (newToken) {
@@ -21,7 +21,7 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // ── Login ─────────────────────────────────────────────────────────────────
+  // ── Login 
   const login = (newToken, userData) => {
     setToken(newToken);
     if (userData) {
@@ -30,7 +30,7 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // ── Logout ────────────────────────────────────────────────────────────────
+  // ── Logout
   const logout = () => {
     setToken(null);
     setUser(null);
@@ -38,7 +38,7 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('token');
   };
 
-  // ── Rehydrate user from localStorage on page reload ───────────────────────
+  // ── Rehydrate user from localStorage on page reload
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
     if (storedUser) {

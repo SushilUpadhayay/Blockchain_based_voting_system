@@ -14,10 +14,9 @@ import {
   Wallet,
   FileText
 } from 'lucide-react';
-import API from '../api/api';
 import { useAuth } from '../context/AuthContext';
 import { useVoting } from '../context/VotingContext';
-import ThemeToggle from '../components/ThemeToggle';
+import API from '../api/api';
 import ConfirmDialog from '../components/ConfirmDialog';
 
 const AdminDashboard = () => {
@@ -51,9 +50,6 @@ const AdminDashboard = () => {
       fetchUsers();
     }
   }, [user]);
-
-  // ProtectedRoute handles redirection, so we don't need the redundant check here
-  // which might trigger during rehydration on refresh.
 
   const fetchUsers = async () => {
     setFetching(true);
@@ -189,7 +185,7 @@ const AdminDashboard = () => {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <ThemeToggle />
+
             {currentAccount ? (
               <div
                 className="flex items-center gap-2 px-4 py-2 rounded-xl border transition-colors"
@@ -210,20 +206,6 @@ const AdminDashboard = () => {
                 Connect Admin Wallet
               </button>
             )}
-            <button
-              onClick={() => window.location.reload()}
-              className="p-2 hover:bg-gray-100 rounded-full transition-colors"
-              title="Reload Page"
-            >
-              <RefreshCw className="w-5 h-5 text-blue-500" />
-            </button>
-            <button
-              onClick={fetchUsers}
-              className="p-2 hover:bg-gray-100 rounded-full transition-colors"
-              title="Refresh Data"
-            >
-              <RefreshCw className={`w-5 h-5 text-gray-400 ${fetching ? 'animate-spin' : ''}`} />
-            </button>
           </div>
         </div>
 
@@ -375,14 +357,6 @@ const AdminDashboard = () => {
               <span className="bg-gray-100 text-gray-600 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">
                 {users.length} Pending
               </span>
-              <button
-                onClick={() => window.location.reload()}
-                className="flex items-center gap-2 text-xs font-bold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-all"
-                title="Refresh Page"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                Refresh Page
-              </button>
             </div>
           </div>
 
