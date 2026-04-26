@@ -2,10 +2,23 @@ const User = require('../models/User');
 const generateToken = require('../utils/generateToken');
 const { generateOTP, sendOTP } = require('../services/otpService');
 
-// @desc    Register a new user
-// @route   POST /api/auth/register
+// --- OTP Registration Cache ---
+const pendingRegistrations = new Map();
+
+// Auto-cleanup expired temporary registrations every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [email, data] of pendingRegistrations.entries()) {
+    if (data.expires < now) {
+      pendingRegistrations.delete(email);
+    }
+  }
+}, 5 * 60 * 1000);
+
+// @desc    Initialize registration (send OTP)
+// @route   POST /api/auth/register-init
 // @access  Public
-const registerUser = async (req, res, next) => {
+const registerInit = async (req, res, next) => {
   try {
     const { name, email, idNumber, dob, address, walletAddress } = req.body;
 
@@ -14,7 +27,7 @@ const registerUser = async (req, res, next) => {
       throw new Error('Wallet address is required for registration');
     }
 
-    let user = await User.findOne({ 
+    const user = await User.findOne({ 
       $or: [
         { email }, 
         { idNumber }, 
@@ -27,66 +40,116 @@ const registerUser = async (req, res, next) => {
         res.status(400);
         throw new Error('This identity is already registered and authorized to vote.');
       }
-
       if (user.status === 'blocked') {
         res.status(403);
         throw new Error('This account has been permanently blocked.');
       }
+      // If pending/rejected, we allow them to restart registration
+    }
 
-      // If user is pending or rejected, we update their basic info and allow them to proceed
-      user.name = name;
-      user.email = email;
-      user.idNumber = idNumber;
-      user.dob = dob;
-      user.address = address;
-      user.walletAddress = walletAddress;
-      
-      // If they were rejected, resetting to pending as they are now "resubmitting"
+    const otp = generateOTP();
+    const expires = Date.now() + 5 * 60 * 1000; // 5 minutes
+    
+    pendingRegistrations.set(email, {
+      userData: { name, email, idNumber, dob, address, walletAddress },
+      otp,
+      expires,
+      attempts: 0
+    });
+
+    // Send OTP asynchronously (don't wait for it to block the response)
+    sendOTP({ email, name }, otp, 'registration').catch(err => {
+      console.error('Failed to send registration OTP in background:', err);
+    });
+
+    res.status(200).json({
+      message: 'OTP sent to your email. Please verify to complete registration.',
+      email
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Verify OTP and finalize registration
+// @route   POST /api/auth/verify-register-otp
+// @access  Public
+const verifyRegisterOtp = async (req, res, next) => {
+  try {
+    const { email, otp } = req.body;
+
+    if (!email || !otp) {
+      res.status(400);
+      throw new Error('Email and OTP are required');
+    }
+
+    const record = pendingRegistrations.get(email);
+
+    if (!record) {
+      res.status(400);
+      throw new Error('Registration session expired or not found. Please register again.');
+    }
+
+    if (record.expires < Date.now()) {
+      pendingRegistrations.delete(email);
+      res.status(401);
+      throw new Error('OTP expired. Please register again.');
+    }
+
+    if (record.attempts >= 5) {
+      pendingRegistrations.delete(email);
+      res.status(403);
+      throw new Error('Too many failed attempts. Registration session locked.');
+    }
+
+    if (record.otp !== otp) {
+      record.attempts += 1;
+      if (record.attempts >= 5) {
+        pendingRegistrations.delete(email);
+        res.status(403);
+        throw new Error('Too many failed attempts. Registration session locked.');
+      }
+      res.status(401);
+      throw new Error(`Invalid OTP. ${5 - record.attempts} attempts remaining.`);
+    }
+
+    // OTP is valid. Check DB one last time to prevent race conditions
+    let user = await User.findOne({ email });
+
+    if (user) {
+      // User might be pending/rejected and just resubmitting
+      user.name = record.userData.name;
+      user.idNumber = record.userData.idNumber;
+      user.dob = record.userData.dob;
+      user.address = record.userData.address;
+      user.walletAddress = record.userData.walletAddress;
       if (user.status === 'rejected') {
         user.status = 'pending';
         user.rejectionReason = undefined;
       }
-      
       await user.save();
-
-      return res.status(200).json({
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        status: user.status,
-        role: user.role,
-        walletAddress: user.walletAddress,
-        token: generateToken(user._id),
-        message: user.status === 'pending' ? 'Identity updated. Please proceed to upload documents.' : 'Resubmission started. Please upload your documents.',
-      });
-    }
-
-    user = await User.create({
-      name,
-      email,
-      idNumber,
-      dob,
-      address,
-      walletAddress,
-      status: 'pending',
-      documentPath: 'pending_upload', 
-    });
-
-    if (user) {
-      res.status(201).json({
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        status: user.status,
-        role: user.role,
-        walletAddress: user.walletAddress,
-        token: generateToken(user._id),
-        message: 'Registration successful. Please proceed to upload your ID document.',
-      });
     } else {
-      res.status(400);
-      throw new Error('Invalid user data');
+      // Create new user
+      user = await User.create({
+        ...record.userData,
+        status: 'pending',
+        documentPath: 'pending_upload', 
+      });
     }
+
+    // Clean up temporary record
+    pendingRegistrations.delete(email);
+
+    res.status(201).json({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      status: user.status,
+      role: user.role,
+      walletAddress: user.walletAddress,
+      token: generateToken(user._id),
+      message: 'Registration successful. Please proceed to upload your ID document.',
+    });
   } catch (error) {
     next(error);
   }
@@ -137,7 +200,10 @@ const loginUser = async (req, res, next) => {
     user.otpAttempts = 0;
     await user.save();
 
-    await sendOTP(user, otp, 'login');
+    // Send OTP asynchronously to prevent blocking the response
+    sendOTP(user, otp, 'login').catch(err => {
+      console.error('Failed to send login OTP in background:', err);
+    });
 
     res.json({
       message: 'OTP sent successfully to your email',
@@ -238,7 +304,10 @@ const requestVoteOTP = async (req, res, next) => {
     user.otpAttempts = 0;
     await user.save();
 
-    await sendOTP(user, otp, 'voting');
+    // Send OTP asynchronously to prevent blocking the response
+    sendOTP(user, otp, 'voting').catch(err => {
+      console.error('Failed to send voting OTP in background:', err);
+    });
 
     res.json({
       message: 'Voting OTP sent to your registered email',
@@ -289,7 +358,8 @@ const verifyVoteOTP = async (req, res, next) => {
 };
 
 module.exports = {
-  registerUser,
+  registerInit,
+  verifyRegisterOtp,
   loginUser,
   verifyOtp,
   requestVoteOTP,

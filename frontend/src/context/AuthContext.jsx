@@ -7,10 +7,11 @@ export const useAuth = () => useContext(AuthContext);
 export const AuthProvider = ({ children }) => {
   const [token, setTokenState] = useState(localStorage.getItem('token'));
   const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   const isAuthenticated = !!token;
 
-  // ── Token helpers ─────────────────────────────────────────────────────────
+  // ── Token helpers
   const setToken = (newToken) => {
     setTokenState(newToken);
     if (newToken) {
@@ -20,7 +21,7 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // ── Login ─────────────────────────────────────────────────────────────────
+  // ── Login 
   const login = (newToken, userData) => {
     setToken(newToken);
     if (userData) {
@@ -29,7 +30,7 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // ── Logout ────────────────────────────────────────────────────────────────
+  // ── Logout
   const logout = () => {
     setToken(null);
     setUser(null);
@@ -37,7 +38,7 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('token');
   };
 
-  // ── Rehydrate user from localStorage on page reload ───────────────────────
+  // ── Rehydrate user from localStorage on page reload
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
     if (storedUser) {
@@ -49,10 +50,11 @@ export const AuthProvider = ({ children }) => {
         localStorage.removeItem('user');
       }
     }
+    setLoading(false);
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, token, isAuthenticated, login, logout, setToken }}>
+    <AuthContext.Provider value={{ user, token, isAuthenticated, login, logout, setToken, loading }}>
       {children}
     </AuthContext.Provider>
   );
