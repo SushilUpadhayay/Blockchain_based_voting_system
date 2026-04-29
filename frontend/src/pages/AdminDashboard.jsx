@@ -185,6 +185,17 @@ const AdminDashboard = () => {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => window.location.reload()}
+              className="p-2 rounded-xl border transition-all duration-300 hover:rotate-180 active:scale-95 shadow-sm group"
+              style={{ backgroundColor: 'var(--bg-color)', borderColor: 'var(--border-color)' }}
+              title="Refresh Page"
+            >
+              <RefreshCw 
+                className="w-4 h-4 opacity-70 group-hover:opacity-100 group-hover:text-blue-600 transition-all" 
+                style={{ color: 'var(--text-color)' }} 
+              />
+            </button>
 
             {currentAccount ? (
               <div
