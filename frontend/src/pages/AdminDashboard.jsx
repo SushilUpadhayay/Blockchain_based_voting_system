@@ -12,7 +12,9 @@ import {
   AlertCircle,
   RefreshCw,
   Wallet,
-  FileText
+  FileText,
+  Download,
+  X
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useVoting } from '../context/VotingContext';
@@ -44,6 +46,8 @@ const AdminDashboard = () => {
     userId: null,
     reason: '',
   });
+
+  const [selectedDocument, setSelectedDocument] = useState(null);
 
   useEffect(() => {
     if (user?.role === 'admin') {
@@ -140,6 +144,31 @@ const AdminDashboard = () => {
     // Extract just the filename, ignoring the absolute server directories
     const filename = docPath.split(/[\\/]/).pop();
     return `${baseUrl}/uploads/${filename}`;
+  };
+
+  const handleViewDocument = (docPath) => {
+    if (!docPath) return;
+    const url = getDocumentUrl(docPath);
+    const type = docPath.toLowerCase().endsWith('.pdf') ? 'pdf' : 'image';
+    setSelectedDocument({ url, type });
+  };
+
+  const handleDownload = async (url, filename) => {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const objectUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = filename || 'document';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      toast.error('Failed to download document');
+      console.error('Download error:', error);
+    }
   };
 
   return (
@@ -420,15 +449,13 @@ const AdminDashboard = () => {
                       </td>
                       <td className="py-4 px-6">
                         {u.documentPath && u.documentPath !== 'pending_upload' ? (
-                          <a
-                            href={getDocumentUrl(u.documentPath)}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline"
+                          <button
+                            onClick={() => handleViewDocument(u.documentPath)}
+                            className="flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline focus:outline-none"
                           >
                             <FileText className="w-4 h-4" />
                             View Doc
-                          </a>
+                          </button>
                         ) : (
                           <span className="text-sm opacity-50 text-gray-400 italic">No Doc</span>
                         )}
@@ -521,6 +548,76 @@ const AdminDashboard = () => {
         confirmText="Confirm End Election"
         danger={true}
       />
+
+      {/* Document Viewer Modal */}
+      {selectedDocument && (
+        <div 
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 transition-all duration-300"
+          onClick={() => setSelectedDocument(null)}
+          style={{ animation: 'fadeIn 0.2s ease-out' }}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh]"
+            onClick={(e) => e.stopPropagation()}
+            style={{ animation: 'scaleIn 0.2s ease-out' }}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-lg font-bold flex items-center gap-2 text-gray-800">
+                <FileText className="w-5 h-5 text-blue-600" />
+                Document Viewer
+              </h3>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    const filename = selectedDocument.url.split(/[\\/]/).pop();
+                    handleDownload(selectedDocument.url, filename);
+                  }}
+                  className="flex items-center gap-1 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                >
+                  <Download className="w-4 h-4" />
+                  Download
+                </button>
+                <button 
+                  onClick={() => setSelectedDocument(null)}
+                  className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors text-gray-500 hover:text-red-500"
+                  title="Close (❌)"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            
+            {/* Content */}
+            <div className="flex-1 overflow-auto bg-gray-50 p-4 flex items-center justify-center min-h-[50vh]">
+              {selectedDocument.type === 'pdf' ? (
+                <iframe 
+                  src={selectedDocument.url} 
+                  className="w-full h-[70vh] rounded shadow-sm border border-gray-200"
+                  title="Document PDF Viewer"
+                />
+              ) : (
+                <img 
+                  src={selectedDocument.url} 
+                  alt="User Document" 
+                  className="max-w-full max-h-[70vh] object-contain rounded shadow-sm border border-gray-200"
+                />
+              )}
+            </div>
+          </div>
+          
+          <style>{`
+            @keyframes fadeIn {
+              from { opacity: 0; }
+              to { opacity: 1; }
+            }
+            @keyframes scaleIn {
+              from { opacity: 0; transform: scale(0.95); }
+              to { opacity: 1; transform: scale(1); }
+            }
+          `}</style>
+        </div>
+      )}
     </div>
   );
 };

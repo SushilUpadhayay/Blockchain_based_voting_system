@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Navigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import API from '../api/api';
 import { useAuth } from '../context/AuthContext';
@@ -7,7 +7,12 @@ import { useAuth } from '../context/AuthContext';
 const VerifyOtp = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login } = useAuth();
+  const { login, user, isAuthenticated } = useAuth();
+
+  // If user is already logged in and verified, prevent access to this page
+  if (isAuthenticated && user?.isVerified) {
+    return <Navigate to="/dashboard" replace />;
+  }
 
   // Retrieve email passed from Login page
   const email = location.state?.email || '';

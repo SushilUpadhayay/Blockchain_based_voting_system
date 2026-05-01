@@ -25,8 +25,9 @@ export const AuthProvider = ({ children }) => {
   const login = (newToken, userData) => {
     setToken(newToken);
     if (userData) {
-      setUser(userData);
-      localStorage.setItem('user', JSON.stringify(userData));
+      const verifiedUser = { ...userData, isVerified: true };
+      setUser(verifiedUser);
+      localStorage.setItem('user', JSON.stringify(verifiedUser));
     }
   };
 

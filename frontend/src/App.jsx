@@ -13,6 +13,7 @@ import Dashboard from './pages/Dashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import Home from './pages/Home';
 import ProtectedRoute from './components/ProtectedRoute';
+import AdminRoute from './components/AdminRoute';
 
 function AppContent() {
   const location = useLocation();
@@ -51,9 +52,9 @@ function AppContent() {
           <Route 
             path="/admin" 
             element={
-              <ProtectedRoute adminOnly={true}>
+              <AdminRoute>
                 <AdminDashboard />
-              </ProtectedRoute>
+              </AdminRoute>
             } 
           />
 

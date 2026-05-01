@@ -13,20 +13,27 @@ const userSchema = new mongoose.Schema(
     },
     idNumber: {
       type: String,
-      required: true,
+      required: function () {
+        return this.role === 'user';
+      },
       unique: true,
+      sparse: true,
     },
     dob: {
       type: String,
-      required: true,
+      required: function () {
+        return this.role === 'user';
+      },
     },
     address: {
       type: String,
-      required: true,
+      required: function () {
+        return this.role === 'user';
+      },
     },
     documentPath: {
       type: String,
-      required: true,
+      default: 'pending_upload',
     },
     status: {
       type: String,
@@ -38,8 +45,9 @@ const userSchema = new mongoose.Schema(
     },
     walletAddress: {
       type: String,
-      required: true,
-      unique: true,
+      required: function () {
+        return this.role === 'user';
+      },
     },
     role: {
       type: String,
