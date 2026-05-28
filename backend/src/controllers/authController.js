@@ -4,12 +4,9 @@ const generateToken = require('../utils/generateToken');
 const { generateOTP, sendOTP, hashOTP } = require('../services/otpService');
 const { generateNonce, verifySignature } = require('../services/walletService');
 
-// ============================================================================
 // NOTE: All OTP storage has been migrated to a dedicated MongoDB 'Otp' collection.
 // Security hardens added: OTP hashing (SHA-256), 60s resend cooldown, 
 // and rigorous 5-attempt locking.
-// ============================================================================
-
 // @desc    Get dynamic wallet nonce for signature verification
 // @route   GET /api/auth/nonce
 // @access  Public
@@ -48,11 +45,11 @@ const registerInit = async (req, res, next) => {
     await verifySignature(walletAddress, signature, message);
 
     // 2. Proceed with checking if user/ID already exists
-    const user = await User.findOne({ 
+    const user = await User.findOne({
       $or: [
-        { email }, 
+        { email },
         { idNumber }
-      ] 
+      ]
     });
 
     if (user) {
@@ -118,9 +115,9 @@ const verifyRegisterOtp = async (req, res, next) => {
       throw new Error('Email and OTP are required');
     }
 
-    const record = await Otp.findOne({ 
-      email: email.toLowerCase(), 
-      purpose: 'registration' 
+    const record = await Otp.findOne({
+      email: email.toLowerCase(),
+      purpose: 'registration'
     });
 
     if (!record) {
@@ -173,7 +170,7 @@ const verifyRegisterOtp = async (req, res, next) => {
       user = await User.create({
         ...record.userData,
         status: 'pending',
-        documentPath: 'pending_upload', 
+        documentPath: 'pending_upload',
       });
     }
 
@@ -226,9 +223,9 @@ const loginUser = async (req, res, next) => {
     }
 
     // Enforce rate-limit lockout and 60-second resend cooldown
-    const existingOtp = await Otp.findOne({ 
-      email: email.toLowerCase(), 
-      purpose: 'login' 
+    const existingOtp = await Otp.findOne({
+      email: email.toLowerCase(),
+      purpose: 'login'
     });
     if (existingOtp) {
       if (existingOtp.attempts >= 5 && existingOtp.expiresAt > new Date()) {
@@ -306,9 +303,9 @@ const verifyOtp = async (req, res, next) => {
       throw new Error('User not found');
     }
 
-    const otpRecord = await Otp.findOne({ 
-      email: email.toLowerCase(), 
-      purpose: 'login' 
+    const otpRecord = await Otp.findOne({
+      email: email.toLowerCase(),
+      purpose: 'login'
     });
 
     if (!otpRecord) {
@@ -332,7 +329,7 @@ const verifyOtp = async (req, res, next) => {
     if (otpRecord.otp !== hashedInput) {
       otpRecord.attempts += 1;
       await otpRecord.save();
-      
+
       if (otpRecord.attempts >= 5) {
         res.status(403);
         throw new Error('Too many failed attempts. This OTP is now locked.');
@@ -377,13 +374,13 @@ const requestVoteOTP = async (req, res, next) => {
     const user = await User.findById(req.user._id);
 
     if (!user) {
-        res.status(404);
-        throw new Error('User not found');
+      res.status(404);
+      throw new Error('User not found');
     }
 
     if (user.status !== 'registered') {
-        res.status(403);
-        throw new Error('Only registered and approved voters can request a voting OTP');
+      res.status(403);
+      throw new Error('Only registered and approved voters can request a voting OTP');
     }
 
     // Enforce 60-second resend cooldown for voting OTP
@@ -430,13 +427,13 @@ const verifyVoteOTP = async (req, res, next) => {
     const user = await User.findById(req.user._id);
 
     if (!user) {
-        res.status(404);
-        throw new Error('User not found');
+      res.status(404);
+      throw new Error('User not found');
     }
 
-    const otpRecord = await Otp.findOne({ 
-      email: user.email.toLowerCase(), 
-      purpose: 'voting' 
+    const otpRecord = await Otp.findOne({
+      email: user.email.toLowerCase(),
+      purpose: 'voting'
     });
 
     if (!otpRecord) {
@@ -455,7 +452,7 @@ const verifyVoteOTP = async (req, res, next) => {
     if (otpRecord.otp !== hashedInput) {
       otpRecord.attempts += 1;
       await otpRecord.save();
-      
+
       if (otpRecord.attempts >= 5) {
         await Otp.deleteOne({ _id: otpRecord._id });
         res.status(403);
