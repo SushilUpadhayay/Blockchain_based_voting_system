@@ -43,6 +43,27 @@ const Register = () => {
     }
   };
 
+  const getWalletSignature = async (address) => {
+    try {
+      toast.loading("Requesting cryptographic challenge from server...", { id: "signing" });
+      const response = await API.get(`/auth/nonce?walletAddress=${address}`);
+      const { message } = response.data;
+      
+      toast.loading("Please sign the verification message in MetaMask...", { id: "signing" });
+      const signature = await window.ethereum.request({
+        method: "personal_sign",
+        params: [message, address]
+      });
+      
+      toast.success("Identity verified cryptographically!", { id: "signing" });
+      return { signature, message };
+    } catch (error) {
+      console.error("Signature collection failed:", error);
+      toast.error(error.response?.data?.message || "Cryptographic verification cancelled.", { id: "signing" });
+      return null;
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -56,6 +77,14 @@ const Register = () => {
       }
     }
 
+    // Collect cryptographic signature of the nonce challenge
+    const sigData = await getWalletSignature(address);
+    if (!sigData) {
+      setLoading(false);
+      return; // Stop if signing fails
+    }
+    const { signature, message } = sigData;
+
     try {
       await API.post('/auth/register-init', {
         name: formData.name,
@@ -63,7 +92,9 @@ const Register = () => {
         dob: formData.dob,
         address: formData.address,
         idNumber: formData.idNumber,
-        walletAddress: address
+        walletAddress: address,
+        signature,
+        message
       });
       toast.success("OTP sent to your email!");
       setStep(2);
@@ -106,6 +137,15 @@ const Register = () => {
 
   const handleResendOtp = async () => {
     setLoading(true);
+    let address = formData.walletAddress;
+    
+    const sigData = await getWalletSignature(address);
+    if (!sigData) {
+      setLoading(false);
+      return;
+    }
+    const { signature, message } = sigData;
+
     try {
       await API.post('/auth/register-init', {
         name: formData.name,
@@ -113,7 +153,9 @@ const Register = () => {
         dob: formData.dob,
         address: formData.address,
         idNumber: formData.idNumber,
-        walletAddress: formData.walletAddress
+        walletAddress: address,
+        signature,
+        message
       });
       toast.success("A new OTP has been sent to your email.");
     } catch (error) {

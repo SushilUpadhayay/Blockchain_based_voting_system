@@ -57,7 +57,19 @@ const sendOTP = async (user, otp, purpose = 'login') => {
   }
 };
 
+/**
+ * Cryptographically hash a 6-digit OTP to prevent database exposure.
+ * Uses SHA-256 for fast and highly secure verification.
+ * @param {string} otp - Raw 6-digit OTP
+ * @returns {string} - Hashed hex digest
+ */
+const hashOTP = (otp) => {
+  if (!otp) throw new Error('OTP is required for hashing');
+  return crypto.createHash('sha256').update(otp).digest('hex');
+};
+
 module.exports = {
   generateOTP,
   sendOTP,
+  hashOTP,
 };

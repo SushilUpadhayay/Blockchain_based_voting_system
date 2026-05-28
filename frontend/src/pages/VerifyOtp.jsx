@@ -14,8 +14,10 @@ const VerifyOtp = () => {
     return <Navigate to="/dashboard" replace />;
   }
 
-  // Retrieve email passed from Login page
+  // Retrieve email and wallet signature details passed from Login page
   const email = location.state?.email || '';
+  const signature = location.state?.signature || null;
+  const message = location.state?.message || null;
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -29,7 +31,12 @@ const VerifyOtp = () => {
 
     setLoading(true);
     try {
-      const response = await API.post('/auth/verify-otp', { email, otp });
+      const response = await API.post('/auth/verify-otp', { 
+        email, 
+        otp,
+        signature,
+        message
+      });
       const { token, ...userData } = response.data;
 
       if (!token) {

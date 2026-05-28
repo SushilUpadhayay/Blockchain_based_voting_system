@@ -12,13 +12,51 @@ const Login = () => {
     e.preventDefault();
     setLoading(true);
     try {
-      await API.post('/auth/login', { email });
-      // OTP is sent via email — corrected from the previous misleading "phone" message
-      toast.success('OTP sent to your email!');
-      navigate('/verify-otp', { state: { email } });
+      const response = await API.post('/auth/login', { email });
+      const { requireSignature, walletAddress, signMessage } = response.data;
+      
+      let signature = null;
+      let message = null;
+      
+      if (requireSignature) {
+        toast.loading("Connecting MetaMask to verify wallet...", { id: "login-wallet" });
+        if (!window.ethereum) {
+          toast.error("MetaMask is required to log into this account.", { id: "login-wallet" });
+          setLoading(false);
+          return;
+        }
+        
+        // Connect wallet
+        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        const currentWallet = accounts[0];
+        
+        if (currentWallet.toLowerCase() !== walletAddress.toLowerCase()) {
+          toast.error(`Connected wallet does not match registered wallet for this account.\nExpected: ${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`, { id: "login-wallet", duration: 5000 });
+          setLoading(false);
+          return;
+        }
+        
+        // Prompt user to sign the dynamic server challenge
+        toast.loading("Please sign the verification challenge in MetaMask...", { id: "login-wallet" });
+        signature = await window.ethereum.request({
+          method: 'personal_sign',
+          params: [signMessage, currentWallet]
+        });
+        message = signMessage;
+        toast.success("Wallet signature acquired successfully!", { id: "login-wallet" });
+      }
+
+      toast.success('OTP sent to your email!', { id: "login-wallet" });
+      navigate('/verify-otp', { 
+        state: { 
+          email, 
+          signature, 
+          message 
+        } 
+      });
     } catch (error) {
       console.error('Login Error:', error);
-      toast.error(error.response?.data?.message || 'Login failed. Please check your email and try again.');
+      toast.error(error.response?.data?.message || 'Login failed. Please check your email and try again.', { id: "login-wallet" });
     } finally {
       setLoading(false);
     }

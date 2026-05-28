@@ -54,16 +54,8 @@ const userSchema = new mongoose.Schema(
       enum: ['user', 'admin'],
       default: 'user',
     },
-    otp: {
-      type: String,
-    },
-    otpExpires: {
-      type: Date,
-    },
-    otpAttempts: {
-      type: Number,
-      default: 0,
-    },
+    // NOTE: OTP fields (otp, otpExpires, otpAttempts) have been moved to
+    // the dedicated Otp model for persistent, TTL-managed storage.
   },
   {
     timestamps: true,

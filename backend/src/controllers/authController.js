@@ -1,32 +1,53 @@
 const User = require('../models/User');
+const Otp = require('../models/Otp');
 const generateToken = require('../utils/generateToken');
-const { generateOTP, sendOTP } = require('../services/otpService');
+const { generateOTP, sendOTP, hashOTP } = require('../services/otpService');
+const { generateNonce, verifySignature } = require('../services/walletService');
 
-// --- OTP Registration Cache ---
-const pendingRegistrations = new Map();
+// ============================================================================
+// NOTE: All OTP storage has been migrated to a dedicated MongoDB 'Otp' collection.
+// Security hardens added: OTP hashing (SHA-256), 60s resend cooldown, 
+// and rigorous 5-attempt locking.
+// ============================================================================
 
-// Auto-cleanup expired temporary registrations every 5 minutes
-setInterval(() => {
-  const now = Date.now();
-  for (const [email, data] of pendingRegistrations.entries()) {
-    if (data.expires < now) {
-      pendingRegistrations.delete(email);
+// @desc    Get dynamic wallet nonce for signature verification
+// @route   GET /api/auth/nonce
+// @access  Public
+const getWalletNonce = async (req, res, next) => {
+  try {
+    const { walletAddress } = req.query;
+    if (!walletAddress) {
+      res.status(400);
+      throw new Error('Wallet address is required to generate a challenge');
     }
+    const nonceObj = await generateNonce(walletAddress);
+    res.json(nonceObj);
+  } catch (error) {
+    next(error);
   }
-}, 5 * 60 * 1000);
+};
 
 // @desc    Initialize registration (send OTP)
 // @route   POST /api/auth/register-init
 // @access  Public
 const registerInit = async (req, res, next) => {
   try {
-    const { name, email, idNumber, dob, address, walletAddress } = req.body;
+    const { name, email, idNumber, dob, address, walletAddress, signature, message } = req.body;
 
     if (!walletAddress) {
       res.status(400);
       throw new Error('Wallet address is required for registration');
     }
 
+    if (!signature || !message) {
+      res.status(400);
+      throw new Error('Cryptographic signature and original verification message are required');
+    }
+
+    // 1. Verify cryptographic proof of wallet ownership
+    await verifySignature(walletAddress, signature, message);
+
+    // 2. Proceed with checking if user/ID already exists
     const user = await User.findOne({ 
       $or: [
         { email }, 
@@ -43,27 +64,42 @@ const registerInit = async (req, res, next) => {
         res.status(403);
         throw new Error('This account has been permanently blocked.');
       }
-      // If pending/rejected, we allow them to restart registration
     }
 
+    // 3. Enforce 60-second OTP resend cooldown
+    const existingOtp = await Otp.findOne({ email: email.toLowerCase(), purpose: 'registration' });
+    if (existingOtp) {
+      const elapsedSeconds = Math.floor((Date.now() - existingOtp.createdAt.getTime()) / 1000);
+      if (elapsedSeconds < 60) {
+        const remainingSeconds = 60 - elapsedSeconds;
+        res.status(429);
+        throw new Error(`Please wait ${remainingSeconds} seconds before requesting a new OTP.`);
+      }
+      // Clean up previous OTP if cooldown expired
+      await Otp.deleteOne({ _id: existingOtp._id });
+    }
+
+    // 4. Generate raw OTP, hash it, and store securely
     const otp = generateOTP();
-    const expires = Date.now() + 5 * 60 * 1000; // 5 minutes
-    
-    pendingRegistrations.set(email, {
+    const hashedOtp = hashOTP(otp);
+
+    await Otp.create({
+      email: email.toLowerCase(),
+      otp: hashedOtp,
+      purpose: 'registration',
       userData: { name, email, idNumber, dob, address, walletAddress },
-      otp,
-      expires,
-      attempts: 0
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000), // 5 minutes expiration
     });
 
-    // Send OTP asynchronously (don't wait for it to block the response)
+    // Send raw OTP asynchronously via email
     sendOTP({ email, name }, otp, 'registration').catch(err => {
       console.error('Failed to send registration OTP in background:', err);
     });
 
     res.status(200).json({
       message: 'OTP sent to your email. Please verify to complete registration.',
-      email
+      email,
+      cooldownSeconds: 60
     });
   } catch (error) {
     next(error);
@@ -82,29 +118,36 @@ const verifyRegisterOtp = async (req, res, next) => {
       throw new Error('Email and OTP are required');
     }
 
-    const record = pendingRegistrations.get(email);
+    const record = await Otp.findOne({ 
+      email: email.toLowerCase(), 
+      purpose: 'registration' 
+    });
 
     if (!record) {
       res.status(400);
       throw new Error('Registration session expired or not found. Please register again.');
     }
 
-    if (record.expires < Date.now()) {
-      pendingRegistrations.delete(email);
+    if (record.expiresAt < new Date()) {
+      await Otp.deleteOne({ _id: record._id });
       res.status(401);
       throw new Error('OTP expired. Please register again.');
     }
 
     if (record.attempts >= 5) {
-      pendingRegistrations.delete(email);
+      await Otp.deleteOne({ _id: record._id });
       res.status(403);
       throw new Error('Too many failed attempts. Registration session locked.');
     }
 
-    if (record.otp !== otp) {
+    // Hash user input OTP to compare with hashed value in database
+    const hashedInput = hashOTP(otp);
+    if (record.otp !== hashedInput) {
       record.attempts += 1;
+      await record.save();
+
       if (record.attempts >= 5) {
-        pendingRegistrations.delete(email);
+        await Otp.deleteOne({ _id: record._id });
         res.status(403);
         throw new Error('Too many failed attempts. Registration session locked.');
       }
@@ -116,7 +159,6 @@ const verifyRegisterOtp = async (req, res, next) => {
     let user = await User.findOne({ email });
 
     if (user) {
-      // User might be pending/rejected and just resubmitting
       user.name = record.userData.name;
       user.idNumber = record.userData.idNumber;
       user.dob = record.userData.dob;
@@ -128,7 +170,6 @@ const verifyRegisterOtp = async (req, res, next) => {
       }
       await user.save();
     } else {
-      // Create new user
       user = await User.create({
         ...record.userData,
         status: 'pending',
@@ -136,8 +177,8 @@ const verifyRegisterOtp = async (req, res, next) => {
       });
     }
 
-    // Clean up temporary record
-    pendingRegistrations.delete(email);
+    // Delete OTP record immediately upon successful verification
+    await Otp.deleteOne({ _id: record._id });
 
     res.status(201).json({
       _id: user._id,
@@ -146,7 +187,7 @@ const verifyRegisterOtp = async (req, res, next) => {
       status: user.status,
       role: user.role,
       walletAddress: user.walletAddress,
-      token: generateToken(user._id),
+      token: generateToken(user._id, user.role, user.walletAddress),
       message: 'Registration successful. Please proceed to upload your ID document.',
     });
   } catch (error) {
@@ -179,34 +220,67 @@ const loginUser = async (req, res, next) => {
       throw new Error('User not found');
     }
 
-    // Check if account is permanently blocked
     if (user.status === 'blocked') {
       res.status(403);
       throw new Error('Access denied. This account has been permanently blocked.');
     }
 
-    // Rate-limit check BEFORE resetting — must check current attempts first
-    // so the lockout actually fires. (Checking after reset would always pass.)
-    if (user.otpAttempts >= 5 && user.otpExpires > Date.now()) {
-      res.status(429);
-      throw new Error('Too many failed attempts. Please wait a few minutes before trying again.');
+    // Enforce rate-limit lockout and 60-second resend cooldown
+    const existingOtp = await Otp.findOne({ 
+      email: email.toLowerCase(), 
+      purpose: 'login' 
+    });
+    if (existingOtp) {
+      if (existingOtp.attempts >= 5 && existingOtp.expiresAt > new Date()) {
+        res.status(429);
+        throw new Error('Too many failed attempts. Please wait a few minutes before trying again.');
+      }
+
+      const elapsedSeconds = Math.floor((Date.now() - existingOtp.createdAt.getTime()) / 1000);
+      if (elapsedSeconds < 60) {
+        const remainingSeconds = 60 - elapsedSeconds;
+        res.status(429);
+        throw new Error(`Please wait ${remainingSeconds} seconds before requesting a new OTP.`);
+      }
+
+      // Delete expired/expired-cooldown OTP record
+      await Otp.deleteOne({ _id: existingOtp._id });
     }
 
-    // Generate OTP and reset attempt counter for the new code
+    // Generate, hash and save secure OTP
     const otp = generateOTP();
-    user.otp = otp;
-    user.otpExpires = Date.now() + 5 * 60 * 1000; // 5 minutes
-    user.otpAttempts = 0;
-    await user.save();
+    const hashedOtp = hashOTP(otp);
 
-    // Send OTP asynchronously to prevent blocking the response
+    await Otp.create({
+      email: email.toLowerCase(),
+      otp: hashedOtp,
+      purpose: 'login',
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+    });
+
+    // Send raw OTP asynchronously
     sendOTP(user, otp, 'login').catch(err => {
       console.error('Failed to send login OTP in background:', err);
     });
 
+    let requireSignature = false;
+    let walletAddress = null;
+    let signMessage = null;
+
+    if (user.walletAddress && user.role === 'user') {
+      requireSignature = true;
+      walletAddress = user.walletAddress;
+      const nonceObj = await generateNonce(walletAddress);
+      signMessage = nonceObj.message;
+    }
+
     res.json({
       message: 'OTP sent successfully to your email',
       email: user.email,
+      requireSignature,
+      walletAddress,
+      signMessage,
+      cooldownSeconds: 60
     });
   } catch (error) {
     next(error);
@@ -218,7 +292,7 @@ const loginUser = async (req, res, next) => {
 // @access  Public
 const verifyOtp = async (req, res, next) => {
   try {
-    const { email, otp } = req.body;
+    const { email, otp, signature, message } = req.body;
 
     if (!email || !otp) {
       res.status(400);
@@ -232,37 +306,53 @@ const verifyOtp = async (req, res, next) => {
       throw new Error('User not found');
     }
 
-    // Check if account is locked for too many attempts
-    if (user.otpAttempts >= 5 && user.otpExpires > Date.now()) {
+    const otpRecord = await Otp.findOne({ 
+      email: email.toLowerCase(), 
+      purpose: 'login' 
+    });
+
+    if (!otpRecord) {
+      res.status(401);
+      throw new Error('OTP session expired or not found. Please request a new one.');
+    }
+
+    if (otpRecord.attempts >= 5) {
       res.status(403);
       throw new Error('Account locked due to too many failed attempts. Please request a new OTP.');
     }
 
-    if (user.otpExpires < Date.now()) {
+    if (otpRecord.expiresAt < new Date()) {
+      await Otp.deleteOne({ _id: otpRecord._id });
       res.status(401);
       throw new Error('OTP expired. Please request a new one.');
     }
 
-    if (user.otp !== otp) {
-      user.otpAttempts += 1;
-      await user.save();
+    // Verify hashed input OTP against secure hash in database
+    const hashedInput = hashOTP(otp);
+    if (otpRecord.otp !== hashedInput) {
+      otpRecord.attempts += 1;
+      await otpRecord.save();
       
-      if (user.otpAttempts >= 5) {
+      if (otpRecord.attempts >= 5) {
         res.status(403);
         throw new Error('Too many failed attempts. This OTP is now locked.');
       }
 
       res.status(401);
-      throw new Error(`Invalid OTP. ${5 - user.otpAttempts} attempts remaining.`);
+      throw new Error(`Invalid OTP. ${5 - otpRecord.attempts} attempts remaining.`);
     }
 
-    // Prevent reuse by checking if OTP is already used (optional if we clear it)
-    // Clearing OTP and reset attempts after successful use
-    user.otp = undefined;
-    user.otpExpires = undefined;
-    user.otpAttempts = 0;
-    
-    await user.save();
+    // Cryptographic signature check for registered voters
+    if (user.walletAddress && user.role === 'user') {
+      if (!signature || !message) {
+        res.status(400);
+        throw new Error('Cryptographic wallet signature and verification message are required for login.');
+      }
+      await verifySignature(user.walletAddress, signature, message);
+    }
+
+    // Clear verification session immediately upon success
+    await Otp.deleteOne({ _id: otpRecord._id });
 
     res.json({
       _id: user._id,
@@ -272,7 +362,7 @@ const verifyOtp = async (req, res, next) => {
       rejectionReason: user.rejectionReason,
       role: user.role,
       walletAddress: user.walletAddress,
-      token: generateToken(user._id),
+      token: generateToken(user._id, user.role, user.walletAddress),
     });
   } catch (error) {
     next(error);
@@ -296,20 +386,35 @@ const requestVoteOTP = async (req, res, next) => {
         throw new Error('Only registered and approved voters can request a voting OTP');
     }
 
-    // Generate Voting OTP
-    const otp = generateOTP();
-    user.otp = otp;
-    user.otpExpires = Date.now() + 5 * 60 * 1000; // 5 minutes
-    user.otpAttempts = 0;
-    await user.save();
+    // Enforce 60-second resend cooldown for voting OTP
+    const existingOtp = await Otp.findOne({ email: user.email.toLowerCase(), purpose: 'voting' });
+    if (existingOtp) {
+      const elapsedSeconds = Math.floor((Date.now() - existingOtp.createdAt.getTime()) / 1000);
+      if (elapsedSeconds < 60) {
+        const remainingSeconds = 60 - elapsedSeconds;
+        res.status(429);
+        throw new Error(`Please wait ${remainingSeconds} seconds before requesting a new OTP.`);
+      }
+      await Otp.deleteOne({ _id: existingOtp._id });
+    }
 
-    // Send OTP asynchronously to prevent blocking the response
+    const otp = generateOTP();
+    const hashedOtp = hashOTP(otp);
+
+    await Otp.create({
+      email: user.email.toLowerCase(),
+      otp: hashedOtp,
+      purpose: 'voting',
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+    });
+
     sendOTP(user, otp, 'voting').catch(err => {
       console.error('Failed to send voting OTP in background:', err);
     });
 
     res.json({
       message: 'Voting OTP sent to your registered email',
+      cooldownSeconds: 60
     });
   } catch (error) {
     next(error);
@@ -329,23 +434,38 @@ const verifyVoteOTP = async (req, res, next) => {
         throw new Error('User not found');
     }
 
-    if (user.otpExpires < Date.now()) {
+    const otpRecord = await Otp.findOne({ 
+      email: user.email.toLowerCase(), 
+      purpose: 'voting' 
+    });
+
+    if (!otpRecord) {
+      res.status(401);
+      throw new Error('Voting OTP session expired or not found. Please request a new one.');
+    }
+
+    if (otpRecord.expiresAt < new Date()) {
+      await Otp.deleteOne({ _id: otpRecord._id });
       res.status(401);
       throw new Error('OTP expired');
     }
 
-    if (user.otp !== otp) {
-      user.otpAttempts += 1;
-      await user.save();
+    // Verify hashed voting OTP
+    const hashedInput = hashOTP(otp);
+    if (otpRecord.otp !== hashedInput) {
+      otpRecord.attempts += 1;
+      await otpRecord.save();
+      
+      if (otpRecord.attempts >= 5) {
+        await Otp.deleteOne({ _id: otpRecord._id });
+        res.status(403);
+        throw new Error('Too many failed attempts. This voting OTP is now locked.');
+      }
       res.status(401);
-      throw new Error(`Invalid OTP. ${5 - user.otpAttempts} attempts remaining.`);
+      throw new Error(`Invalid OTP. ${5 - otpRecord.attempts} attempts remaining.`);
     }
 
-    // Clear OTP after success
-    user.otp = undefined;
-    user.otpExpires = undefined;
-    user.otpAttempts = 0;
-    await user.save();
+    await Otp.deleteOne({ _id: otpRecord._id });
 
     res.json({
       success: true,
@@ -357,6 +477,7 @@ const verifyVoteOTP = async (req, res, next) => {
 };
 
 module.exports = {
+  getWalletNonce,
   registerInit,
   verifyRegisterOtp,
   loginUser,
