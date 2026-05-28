@@ -3,6 +3,7 @@ const Otp = require('../models/Otp');
 const generateToken = require('../utils/generateToken');
 const { generateOTP, sendOTP, hashOTP } = require('../services/otpService');
 const { generateNonce, verifySignature } = require('../services/walletService');
+const { isVoterAuthorizedOnChain } = require('../services/blockchainService');
 
 // NOTE: All OTP storage has been migrated to a dedicated MongoDB 'Otp' collection.
 // Security hardens added: OTP hashing (SHA-256), 60s resend cooldown, 
@@ -214,12 +215,34 @@ const loginUser = async (req, res, next) => {
 
     if (!user) {
       res.status(401);
-      throw new Error('User not found');
+      throw new Error('User not registered');
     }
 
     if (user.status === 'blocked') {
       res.status(403);
-      throw new Error('Access denied. This account has been permanently blocked.');
+      throw new Error('Account blocked');
+    }
+
+    // Voter checks: Ensure login is ONLY allowed if:
+    // - registration completed & approved by admin (status is 'registered')
+    // - wallet linked
+    // - blockchain authorization completed
+    if (user.role === 'user') {
+      if (user.status !== 'registered') {
+        res.status(403);
+        throw new Error('Registration pending approval');
+      }
+
+      if (!user.walletAddress) {
+        res.status(400);
+        throw new Error('Wallet not linked');
+      }
+
+      const isAuthorized = await isVoterAuthorizedOnChain(user.walletAddress);
+      if (!isAuthorized) {
+        res.status(403);
+        throw new Error('Blockchain authorization not completed');
+      }
     }
 
     // Enforce rate-limit lockout and 60-second resend cooldown
@@ -300,7 +323,34 @@ const verifyOtp = async (req, res, next) => {
 
     if (!user) {
       res.status(401);
-      throw new Error('User not found');
+      throw new Error('User not registered');
+    }
+
+    if (user.status === 'blocked') {
+      res.status(403);
+      throw new Error('Account blocked');
+    }
+
+    // Voter checks: Ensure login is ONLY allowed if:
+    // - registration completed & approved by admin (status is 'registered')
+    // - wallet linked
+    // - blockchain authorization completed
+    if (user.role === 'user') {
+      if (user.status !== 'registered') {
+        res.status(403);
+        throw new Error('Registration pending approval');
+      }
+
+      if (!user.walletAddress) {
+        res.status(400);
+        throw new Error('Wallet not linked');
+      }
+
+      const isAuthorized = await isVoterAuthorizedOnChain(user.walletAddress);
+      if (!isAuthorized) {
+        res.status(403);
+        throw new Error('Blockchain authorization not completed');
+      }
     }
 
     const otpRecord = await Otp.findOne({

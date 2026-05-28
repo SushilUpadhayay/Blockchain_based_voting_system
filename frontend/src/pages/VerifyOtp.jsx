@@ -9,17 +9,18 @@ const VerifyOtp = () => {
   const location = useLocation();
   const { login, user, isAuthenticated } = useAuth();
 
-  // If user is already logged in and verified, prevent access to this page
-  if (isAuthenticated && user?.isVerified) {
-    return <Navigate to="/dashboard" replace />;
-  }
-
   // Retrieve email and wallet signature details passed from Login page
   const email = location.state?.email || '';
   const signature = location.state?.signature || null;
   const message = location.state?.message || null;
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // If user is already logged in and verified, prevent access to this page
+  // (unless we are in the middle of an active login flow, indicated by location.state.email)
+  if (isAuthenticated && user?.isVerified && !email) {
+    return <Navigate to={user.role === 'admin' ? "/admin" : "/dashboard"} replace />;
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault();

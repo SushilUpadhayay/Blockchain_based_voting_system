@@ -123,11 +123,11 @@ const validateVerifyOtp = [
     .isLength({ min: 6, max: 6 }).withMessage('OTP must be exactly 6 digits'),
 
   check('signature')
-    .optional()
+    .optional({ nullable: true })
     .custom(isEthSignature),
 
   check('message')
-    .optional()
+    .optional({ nullable: true })
     .trim()
     .notEmpty().withMessage('Verification challenge message cannot be empty if signature is provided'),
 

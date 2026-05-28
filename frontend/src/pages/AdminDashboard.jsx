@@ -20,6 +20,7 @@ import { useAuth } from '../context/AuthContext';
 import { useVoting } from '../context/VotingContext';
 import API from '../api/api';
 import ConfirmDialog from '../components/ConfirmDialog';
+import LogoutButton from '../components/LogoutButton';
 
 const AdminDashboard = () => {
   const { user } = useAuth();
@@ -246,6 +247,9 @@ const AdminDashboard = () => {
                 Connect Admin Wallet
               </button>
             )}
+
+            {/* Admin Logout — visible within dashboard */}
+            <LogoutButton variant="danger" />
           </div>
         </div>
 

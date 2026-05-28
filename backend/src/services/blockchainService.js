@@ -1,10 +1,10 @@
 const { ethers } = require('ethers');
 
-// ── Configuration ─────────────────────────────────────────────────────────────
+// Configuration
 const RPC_URL = 'http://127.0.0.1:8545';
 const contractAddress = process.env.CONTRACT_ADDRESS;
 
-// ── Lazy Contract Instance ────────────────────────────────────────────────────
+// Lazy Contract Instance 
 // We initialize the contract on first use rather than at module load.
 // This prevents server startup crashes if the Hardhat node is not running.
 let _contract = null;
@@ -28,7 +28,7 @@ const getContract = async () => {
   }
 };
 
-// ── Service Functions ─────────────────────────────────────────────────────────
+// Service Functions
 
 const registerVoterOnChain = async (walletAddress) => {
   try {
@@ -99,9 +99,26 @@ const endElectionOnChain = async () => {
   }
 };
 
+const isVoterAuthorizedOnChain = async (walletAddress) => {
+  try {
+    const contract = await getContract();
+
+    if (!contract.interface.getFunction('registeredVoters')) {
+      throw new Error('registeredVoters function not found in ABI');
+    }
+
+    const isRegistered = await contract.registeredVoters(walletAddress);
+    return isRegistered;
+  } catch (error) {
+    console.error('[BlockchainService] isVoterAuthorizedOnChain error:', error.message);
+    throw new Error('Blockchain verification failed: ' + error.message);
+  }
+};
+
 module.exports = {
   registerVoterOnChain,
   addCandidateOnChain,
   startElectionOnChain,
   endElectionOnChain,
+  isVoterAuthorizedOnChain,
 };

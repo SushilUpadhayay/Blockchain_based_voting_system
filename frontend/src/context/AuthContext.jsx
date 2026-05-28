@@ -1,4 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import API from '../api/api';
+import toast from 'react-hot-toast';
 
 const AuthContext = createContext();
 
@@ -9,7 +11,7 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const isAuthenticated = !!token;
+  const isAuthenticated = !!token && !!user;
 
   // ── Token helpers
   const setToken = (newToken) => {
@@ -32,26 +34,47 @@ export const AuthProvider = ({ children }) => {
   };
 
   // ── Logout
-  const logout = () => {
+  const logout = (showToast = true) => {
     setToken(null);
     setUser(null);
     localStorage.removeItem('user');
     localStorage.removeItem('token');
+    if (showToast) {
+      toast.success('Logged out successfully', {
+        icon: '👋',
+        duration: 3000,
+      });
+    }
   };
 
-  // ── Rehydrate user from localStorage on page reload
+  // ── Validate stored token and load user profile on startup
   useEffect(() => {
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      try {
-        setUser(JSON.parse(storedUser));
-      } catch (e) {
-        console.error('[AuthContext] Failed to parse stored user:', e);
-        // Corrupted data — clear it
-        localStorage.removeItem('user');
+    const checkAuth = async () => {
+      const storedToken = localStorage.getItem('token');
+      if (storedToken) {
+        try {
+          // Verify JWT with the backend before considering the user authenticated
+          const response = await API.get('/user/profile');
+          const userData = response.data;
+          
+          // Rehydrate validated user state
+          const verifiedUser = { ...userData, isVerified: true };
+          setUser(verifiedUser);
+          localStorage.setItem('user', JSON.stringify(verifiedUser));
+        } catch (error) {
+          console.error('[AuthContext] Session validation failed on startup:', error.message);
+          // Token is expired, invalid, user is blocked/rejected, or session fails
+          // Pass false so no toast is shown — this is a silent startup validation
+          logout(false);
+        }
+      } else {
+        // No session token present
+        setUser(null);
       }
-    }
-    setLoading(false);
+      setLoading(false);
+    };
+
+    checkAuth();
   }, []);
 
   return (

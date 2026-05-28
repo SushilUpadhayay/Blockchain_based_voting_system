@@ -1,12 +1,19 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, Navigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import API from '../api/api';
+import { useAuth } from '../context/AuthContext';
 
 const Login = () => {
   const navigate = useNavigate();
+  const { isAuthenticated, user } = useAuth();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // If already logged in, redirect to the appropriate dashboard
+  if (isAuthenticated && user?.isVerified) {
+    return <Navigate to={user.role === 'admin' ? "/admin" : "/dashboard"} replace />;
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault();

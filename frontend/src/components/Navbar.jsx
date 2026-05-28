@@ -1,19 +1,15 @@
 import React from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { Activity, LogOut, Sun, Moon } from 'lucide-react';
+import { Activity, Sun, Moon } from 'lucide-react';
+import LogoutButton from './LogoutButton';
 
 const Navbar = () => {
-  const { isAuthenticated, logout, user } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const { theme, toggleTheme } = useTheme();
-  const navigate = useNavigate();
   const location = useLocation();
-
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
-  };
+  const navigate = useNavigate();
 
   const isAuthPage = ['/login', '/register', '/upload', '/verify-otp'].includes(location.pathname);
 
@@ -54,14 +50,7 @@ const Navbar = () => {
                 VOTING DASHBOARD
               </Link>
             )}
-            <button
-              onClick={handleLogout}
-              className="flex items-center gap-2 text-sm font-medium hover:text-red-600 transition-colors ml-2"
-              style={{ color: 'var(--text-color)' }}
-            >
-              <LogOut className="w-4 h-4" />
-              Logout
-            </button>
+            <LogoutButton variant="full" />
           </>
         ) : (
           !isAuthPage && (

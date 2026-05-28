@@ -20,25 +20,28 @@ API.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// ── Response Interceptor ──────────────────────────────────────────────────────
-// On 401 Unauthorized, clear auth state and redirect to login.
+// On 401 Unauthorized or 403 Forbidden, clear auth state and redirect to login if appropriate.
 // This handles expired / invalidated tokens gracefully.
 API.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const status = error.response?.status;
+    if (status === 401 || status === 403) {
       // Only auto-redirect if the request was NOT to an auth endpoint
       // (to avoid an infinite redirect loop on the login/verify-otp pages)
       const url = error.config?.url ?? '';
-      const isAuthEndpoint =
-        url.includes('/auth/login') ||
-        url.includes('/auth/verify-otp') ||
-        url.includes('/auth/register');
+      const isAuthEndpoint = url.includes('/auth/');
 
       if (!isAuthEndpoint) {
         localStorage.removeItem('token');
         localStorage.removeItem('user');
-        window.location.href = '/login';
+        
+        // Prevent redirecting if the user is already on a public page
+        const publicPaths = ['/', '/register', '/login'];
+        const currentPath = window.location.pathname;
+        if (!publicPaths.includes(currentPath)) {
+          window.location.href = '/login';
+        }
       }
     }
     return Promise.reject(error);

@@ -38,7 +38,7 @@ const protect = async (req, res, next) => {
       // Real-time block check: Prevent blocked users from taking any API actions
       if (dbUser.status === 'blocked') {
         res.status(403);
-        return next(new Error('Access denied. This account has been permanently blocked.'));
+        return next(new Error('Account blocked'));
       }
 
       // 4. Attach user data to request context for downstream controllers & role guards
@@ -56,7 +56,7 @@ const protect = async (req, res, next) => {
       
       // Specifically target TokenExpiredError to return a helpful user message
       if (error.name === 'TokenExpiredError') {
-        return next(new Error('Your authentication session has expired. Please log in again.'));
+        return next(new Error('Session expired'));
       }
       
       if (error.name === 'JsonWebTokenError') {
