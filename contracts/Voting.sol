@@ -9,9 +9,7 @@ pragma solidity ^0.8.20;
   */
   contract Voting {
 
-  // =============================================================
   // STRUCTS
-  // =============================================================
 
   struct Candidate {
   uint256 id;
@@ -19,9 +17,7 @@ pragma solidity ^0.8.20;
   uint256 voteCount;
   }
 
-  // =============================================================
-  // STATE VARIABLES
-  // =============================================================
+ // STATE VARIABLES
 
   address public immutable admin;
   bool public isActive;
@@ -32,9 +28,7 @@ pragma solidity ^0.8.20;
   mapping(address => bool) public registeredVoters;
   mapping(address => bool) public hasVoted;
 
-  // =============================================================
   // EVENTS
-  // =============================================================
 
   event CandidateAdded(uint256 indexed candidateId, string name);
   event VoterAuthorized(address indexed voter);
@@ -42,9 +36,7 @@ pragma solidity ^0.8.20;
   event ElectionEnded(uint256 timestamp);
   event VoteCast(address indexed voter, uint256 indexed candidateId);
 
-  // =============================================================
   // MODIFIERS
-  // =============================================================
 
   modifier onlyAdmin() {
   require(msg.sender == admin, "Only admin allowed");
@@ -61,9 +53,7 @@ pragma solidity ^0.8.20;
   _;
   }
 
-  // =============================================================
   // CONSTRUCTOR
-  // =============================================================
 
   constructor() {
   admin = msg.sender;
@@ -71,9 +61,7 @@ pragma solidity ^0.8.20;
   electionStarted = false;
   }
 
-  // =============================================================
   // ADMIN FUNCTIONS
-  // =============================================================
 
   function addCandidate(string memory name) external onlyAdmin beforeElection {
   require(bytes(name).length > 0, "Empty name");
@@ -105,9 +93,7 @@ pragma solidity ^0.8.20;
   emit ElectionEnded(block.timestamp);
   }
 
-  // =============================================================
   // USER FUNCTION
-  // =============================================================
 
   function vote(uint256 candidateId) external electionActive {
   require(electionStarted, "Election not started");
@@ -121,9 +107,7 @@ pragma solidity ^0.8.20;
 
   }
 
-  // =============================================================
   // VIEW FUNCTIONS
-  // =============================================================
 
   function getCandidates() external view returns (Candidate[] memory) {
   return candidates;
