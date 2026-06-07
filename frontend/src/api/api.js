@@ -7,7 +7,7 @@ const API = axios.create({
   baseURL: BASE_URL,
 });
 
-// ── Request Interceptor ───────────────────────────────────────────────────────
+// Request Interceptor
 // Automatically attach the JWT token from localStorage to every request.
 API.interceptors.request.use(
   (config) => {
