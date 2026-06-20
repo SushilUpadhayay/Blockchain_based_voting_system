@@ -2,9 +2,7 @@ import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-/**
- * AdminRoute — wraps routes that require both authentication and admin authorization.
- */
+// AdminRoute — wraps routes that require both authentication and admin authorization.
 const AdminRoute = ({ children }) => {
   const { user, isAuthenticated, loading } = useAuth();
 

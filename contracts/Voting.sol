@@ -17,7 +17,9 @@ pragma solidity ^0.8.20;
   uint256 voteCount;
   }
 
+  // =============================================================
   // STATE VARIABLES
+  // =============================================================
 
   address public immutable admin;
   bool public isActive;
