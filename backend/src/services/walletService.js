@@ -41,32 +41,26 @@ const verifySignature = async (walletAddress, signature, message) => {
   if (!walletAddress || !signature || !message) {
     throw new Error('Missing parameters. Wallet address, signature, and message are required.');
   }
-
   // 1. Fetch challenge from MongoDB
   const record = await Nonce.findOne({
     walletAddress: walletAddress.toLowerCase(),
     message,
   });
-
   if (!record) {
     throw new Error('Verification session expired or signature challenge not found. Please request a new code.');
   }
-
   // 2. Extra safety check for expiration
   if (record.expiresAt < new Date()) {
     await Nonce.deleteOne({ _id: record._id });
     throw new Error('Verification message expired. Please request a new one.');
   }
-
   try {
     // 3. Cryptographically recover the signer address using ethers.js
     const recoveredAddress = ethers.verifyMessage(message, signature);
-
     // 4. Validate that recovered signer address matches the claimed wallet address
     if (recoveredAddress.toLowerCase() !== walletAddress.toLowerCase()) {
       throw new Error('Signature verification failed. Signer address does not match your registered wallet.');
     }
-
     // 5. Prevent Nonce Reuse: Delete the record immediately upon success
     await Nonce.deleteOne({ _id: record._id });
     return true;
