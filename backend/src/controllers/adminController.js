@@ -1,5 +1,5 @@
 const User = require('../models/User');
-const { registerVoterOnChain, startElectionOnChain, endElectionOnChain, addCandidateOnChain } = require('../services/blockchainService');
+const { registerVoterOnChain, startElectionOnChain, endElectionOnChain, addCandidateOnChain, isVoterAuthorizedOnChain } = require('../services/blockchainService');
 
 // @desc    Get all verified users waiting for admin approval
 // @route   GET /api/admin/pending-users
@@ -43,8 +43,12 @@ const approveUser = async (req, res, next) => {
     // Register on blockchain
     const result = await registerVoterOnChain(user.walletAddress);
 
-    // Optional: store tx hash
+    // Store tx hash from on-chain registration
     user.txHash = result.txHash;
+    user.syncHistory.push({
+      txHash: result.txHash,
+      syncedAt: new Date()
+    });
 
     await user.save();
 
@@ -151,6 +155,85 @@ const addCandidate = async (req, res, next) => {
 };
 
 
+// @desc    Get all registered users
+// @route   GET /api/admin/registered-users
+// @access  Private/Admin
+const getRegisteredUsers = async (req, res, next) => {
+  try {
+    const registeredUsers = await User.find({ status: 'registered' });
+    res.json(registeredUsers);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Sync voter to blockchain if missing
+// @route   POST /api/admin/sync-voter/:id
+// @access  Private/Admin
+const syncVoter = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      res.status(404);
+      throw new Error('User not found');
+    }
+
+    if (user.status !== 'registered') {
+      res.status(400);
+      throw new Error(`Cannot sync user with status: ${user.status}. Must be 'registered'.`);
+    }
+
+    if (!user.walletAddress) {
+      res.status(400);
+      throw new Error('User does not have a linked wallet address');
+    }
+
+    console.log(`[AdminSync] Checking blockchain authorization for user: ${user.email} (${user.walletAddress})`);
+    
+    // Check if already authorized on-chain
+    const isAuthorized = await isVoterAuthorizedOnChain(user.walletAddress);
+
+    if (isAuthorized) {
+      console.log(`[AdminSync] User ${user.email} is already authorized on-chain.`);
+      return res.json({
+        message: 'Voter is already authorized on the blockchain',
+        status: user.status,
+        txHash: user.txHash,
+        syncHistory: user.syncHistory,
+        alreadySynced: true
+      });
+    }
+
+    console.log(`[AdminSync] User ${user.email} not found on-chain. Synchronizing...`);
+
+    // Register on blockchain
+    const result = await registerVoterOnChain(user.walletAddress);
+
+    console.log(`[AdminSync] Synchronization successful for user ${user.email}. TxHash: ${result.txHash}`);
+
+    // Update txHash to latest and append to sync history
+    user.txHash = result.txHash;
+    user.syncHistory.push({
+      txHash: result.txHash,
+      syncedAt: new Date()
+    });
+
+    await user.save();
+
+    res.json({
+      message: 'Voter successfully synchronized to blockchain',
+      status: user.status,
+      txHash: user.txHash,
+      syncHistory: user.syncHistory
+    });
+  } catch (error) {
+    console.error(`[AdminSync] Synchronization failed for user ID ${req.params.id}:`, error.message);
+    next(error);
+  }
+};
+
+
 module.exports = {
   getPendingUsers,
   approveUser,
@@ -158,5 +241,7 @@ module.exports = {
   blockUser,
   startElection,
   endElection,
-  addCandidate
+  addCandidate,
+  getRegisteredUsers,
+  syncVoter
 };

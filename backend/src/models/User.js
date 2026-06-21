@@ -54,6 +54,15 @@ const userSchema = new mongoose.Schema(
       enum: ['user', 'admin'],
       default: 'user',
     },
+    txHash: {
+      type: String,
+    },
+    syncHistory: [
+      {
+        txHash: { type: String, required: true },
+        syncedAt: { type: Date, default: Date.now }
+      }
+    ],
     // NOTE: OTP fields (otp, otpExpires, otpAttempts) have been moved to
     // the dedicated Otp model for persistent, TTL-managed storage.
   },

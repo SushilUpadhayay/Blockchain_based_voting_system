@@ -36,6 +36,7 @@ const AdminDashboard = () => {
   } = useVoting();
 
   const [users, setUsers] = useState([]);
+  const [registeredUsers, setRegisteredUsers] = useState([]);
   const [candidateName, setCandidateName] = useState('');
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
@@ -53,6 +54,7 @@ const AdminDashboard = () => {
   useEffect(() => {
     if (user?.role === 'admin') {
       fetchUsers();
+      fetchRegisteredUsers();
     }
   }, [user]);
 
@@ -68,6 +70,15 @@ const AdminDashboard = () => {
     }
   };
 
+  const fetchRegisteredUsers = async () => {
+    try {
+      const res = await API.get('/admin/registered-users');
+      setRegisteredUsers(res.data);
+    } catch (error) {
+      toast.error('Failed to fetch registered users');
+    }
+  };
+
   const handleApprove = async (id) => {
     try {
       setLoading(true);
@@ -75,8 +86,27 @@ const AdminDashboard = () => {
       await API.post(`/admin/approve/${id}`);
       toast.success('User approved and registered on blockchain', { id: toastId });
       fetchUsers();
+      fetchRegisteredUsers();
     } catch (error) {
       toast.error(error.response?.data?.message || 'Blockchain registration failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSyncToBlockchain = async (id) => {
+    try {
+      setLoading(true);
+      const toastId = toast.loading('Synchronizing voter to blockchain...');
+      const res = await API.post(`/admin/sync-voter/${id}`);
+      if (res.data.alreadySynced) {
+        toast.success(res.data.message || 'Voter is already authorized on-chain', { id: toastId });
+      } else {
+        toast.success('Voter successfully synchronized to blockchain', { id: toastId });
+      }
+      fetchRegisteredUsers();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Blockchain synchronization failed');
     } finally {
       setLoading(false);
     }
@@ -509,6 +539,142 @@ const AdminDashboard = () => {
                       </td>
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </section>
+
+        {/* SEC D: REGISTERED VOTERS */}
+        <section
+          className="rounded-2xl shadow-sm border overflow-hidden transition-all mt-8"
+          style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}
+        >
+          <div
+            className="p-6 border-b flex items-center justify-between"
+            style={{ borderColor: 'var(--border-color)' }}
+          >
+            <div className="flex items-center gap-2">
+              <div className="p-2 bg-emerald-50 rounded-lg">
+                <ShieldCheck className="w-5 h-5 text-emerald-600" />
+              </div>
+              <h2 className="text-xl font-bold" style={{ color: 'var(--text-color)' }}>
+                Registered Voters Registry
+              </h2>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="bg-emerald-100 text-emerald-700 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">
+                {registeredUsers.length} Registered
+              </span>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            {registeredUsers.length === 0 ? (
+              <div className="py-20 text-center">
+                <div className="bg-gray-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <CheckCircle className="text-gray-300 w-8 h-8" />
+                </div>
+                <h3 className="text-gray-900 font-medium text-lg">No registered voters</h3>
+                <p className="text-gray-500">Voters will appear here once approved by an administrator.</p>
+              </div>
+            ) : (
+              <table className="min-w-full divide-y divide-gray-100">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="py-4 px-6 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
+                      Voter Name
+                    </th>
+                    <th className="py-4 px-6 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
+                      Contact Info
+                    </th>
+                    <th className="py-4 px-6 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
+                      ID Number
+                    </th>
+                    <th className="py-4 px-6 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
+                      Linked Wallet Address
+                    </th>
+                    <th className="py-4 px-6 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
+                      Approval Tx Hash
+                    </th>
+                    <th className="py-4 px-6 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
+                      Sync Status / History
+                    </th>
+                    <th className="py-4 px-6 text-center text-xs font-bold text-gray-500 uppercase tracking-wider">
+                      Action
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y" style={{ borderColor: 'var(--border-color)' }}>
+                  {registeredUsers.map((u) => {
+                    const latestSync = u.syncHistory && u.syncHistory.length > 0
+                      ? u.syncHistory[u.syncHistory.length - 1]
+                      : null;
+                    return (
+                      <tr key={u._id} className="hover:opacity-90 transition-colors">
+                        <td className="py-4 px-6">
+                          <div className="font-semibold" style={{ color: 'var(--text-color)' }}>
+                            {u.name}
+                          </div>
+                        </td>
+                        <td className="py-4 px-6 text-sm opacity-70" style={{ color: 'var(--text-color)' }}>
+                          {u.email}
+                        </td>
+                        <td className="py-4 px-6 text-sm font-mono opacity-70" style={{ color: 'var(--text-color)' }}>
+                          {u.idNumber}
+                        </td>
+                        <td className="py-4 px-6">
+                          <div
+                            className="flex items-center gap-2 text-xs font-mono opacity-50 px-2 py-1 rounded-md w-fit"
+                            style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-color)' }}
+                          >
+                            <Wallet className="w-3 h-3" />
+                            {u.walletAddress
+                              ? `${u.walletAddress.slice(0, 6)}...${u.walletAddress.slice(-4)}`
+                              : 'N/A'}
+                          </div>
+                        </td>
+                        <td className="py-4 px-6 text-xs font-mono opacity-50" style={{ color: 'var(--text-color)' }}>
+                          {u.txHash ? (
+                            <span className="truncate max-w-[120px] inline-block" title={u.txHash}>
+                              {u.txHash.slice(0, 10)}...{u.txHash.slice(-8)}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400 italic">No Tx Hash</span>
+                          )}
+                        </td>
+                        <td className="py-4 px-6">
+                          {latestSync ? (
+                            <div className="space-y-1">
+                              <span className="text-green-600 font-semibold text-xs flex items-center gap-1">
+                                <CheckCircle className="w-3 h-3" /> Synced
+                              </span>
+                              <div className="text-[10px] text-gray-500 font-mono" title={latestSync.txHash}>
+                                Tx: {latestSync.txHash.slice(0, 8)}...{latestSync.txHash.slice(-6)}
+                              </div>
+                              <div className="text-[9px] text-gray-400">
+                                {new Date(latestSync.syncedAt).toLocaleString()}
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-amber-500 font-semibold text-xs flex items-center gap-1">
+                              <AlertCircle className="w-3 h-3" /> Never Synced
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-4 px-6 text-center">
+                          <button
+                            onClick={() => handleSyncToBlockchain(u._id)}
+                            disabled={loading || !u.walletAddress || !currentAccount}
+                            className="flex items-center justify-center gap-1 mx-auto bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold py-2 px-3 rounded-lg transition-all shadow-md shadow-blue-100"
+                          >
+                            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                            Sync to Blockchain
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}

@@ -4,24 +4,59 @@ const { ethers } = require('ethers');
 const RPC_URL = 'http://127.0.0.1:8545';
 const contractAddress = process.env.CONTRACT_ADDRESS;
 
-// Lazy Contract Instance 
+// Lazy Contract Instance
 // We initialize the contract on first use rather than at module load.
 // This prevents server startup crashes if the Hardhat node is not running.
 let _contract = null;
+let _provider = null;
+let _lastKnownBlockHash = null; // used to detect Hardhat node resets
+
+/**
+ * Detects if the Hardhat node has been restarted by checking whether the
+ * genesis block hash has changed since last use. If it has, the in-memory
+ * contract instance is stale and must be rebuilt.
+ */
+const hasNodeRestarted = async (provider) => {
+  try {
+    const genesisBlock = await provider.getBlock(0);
+    if (!genesisBlock) return true;
+    if (_lastKnownBlockHash && _lastKnownBlockHash !== genesisBlock.hash) {
+      console.warn('[BlockchainService] Hardhat node restart detected — rebuilding contract instance.');
+      return true;
+    }
+    _lastKnownBlockHash = genesisBlock.hash;
+    return false;
+  } catch {
+    return true;
+  }
+};
 
 const getContract = async () => {
-  if (_contract) return _contract;
-
   try {
     const artifact = require('../config/contractABI.json');
     const abi = artifact.abi ? artifact.abi : artifact;
 
-    const provider = new ethers.JsonRpcProvider(RPC_URL);
-    const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
+    if (!_provider) {
+      _provider = new ethers.JsonRpcProvider(RPC_URL);
+    }
 
-    _contract = new ethers.Contract(contractAddress, abi, wallet);
+    // If node was restarted, discard cached contract so it's rebuilt
+    if (_contract && await hasNodeRestarted(_provider)) {
+      _contract = null;
+    }
+
+    if (!_contract) {
+      const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, _provider);
+      _contract = new ethers.Contract(contractAddress, abi, wallet);
+      // Capture current genesis hash on first build
+      const genesisBlock = await _provider.getBlock(0);
+      if (genesisBlock) _lastKnownBlockHash = genesisBlock.hash;
+    }
+
     return _contract;
   } catch (error) {
+    _contract = null;
+    _provider = null;
     throw new Error(
       `Blockchain service unavailable. Ensure the Hardhat node is running and CONTRACT_ADDRESS / PRIVATE_KEY are set. (${error.message})`
     );
