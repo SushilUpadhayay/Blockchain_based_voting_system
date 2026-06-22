@@ -28,7 +28,7 @@ const generateToken = (id, role, walletAddress) => {
     }, 
     secret, 
     {
-      expiresIn: '2h', // Reduced lifespan from 30 days to 2 hours to limit token hijacking risk
+      expiresIn: '2h', // lifespan of 2 hours to limit token hijacking risk
     }
   );
 };
