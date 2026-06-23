@@ -22,7 +22,7 @@ const VotingContext = createContext();
 export const useVoting = () => useContext(VotingContext);
 
 export const VotingProvider = ({ children }) => {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const [currentAccount, setCurrentAccount] = useState('');
   const [candidates, setCandidates] = useState([]);
   const [electionStatus, setElectionStatus] = useState({ active: false, started: false });
@@ -34,7 +34,6 @@ export const VotingProvider = ({ children }) => {
   const [contractFound, setContractFound] = useState(true);
   const [isOtpModalOpen, setIsOtpModalOpen] = useState(false);
   const [pendingCandidateId, setPendingCandidateId] = useState(null);
-  const [isOtpVerified, setIsOtpVerified] = useState(false);
 
   // ── Helpers ──
   const checkNetwork = useCallback(async (provider) => {
@@ -185,14 +184,33 @@ export const VotingProvider = ({ children }) => {
         return;
       }
 
-      // Step 1: Require OTP verification before submitting
-      if (!isOtpVerified) {
-        setPendingCandidateId(candidateId);
-        setIsOtpModalOpen(true);
+      // Step 1: Open OTP Modal to verify voter before casting vote
+      setPendingCandidateId(candidateId);
+      setIsOtpModalOpen(true);
+    } catch (err) {
+      console.error('[VotingContext] vote initialization error:', err);
+      toast.error(err.reason ?? err.message ?? 'Vote initialization failed.', { id: toastId });
+    }
+  };
+
+  const executeVoteOnChain = async (candidateId) => {
+    const toastId = 'vote';
+    try {
+      if (!window.ethereum) {
+        toast.error('Install MetaMask first.', { id: toastId });
         return;
       }
 
-      // Step 2: Cast the vote on blockchain
+      const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+      const currentWallet = accounts[0];
+      const registeredWallet = user?.walletAddress;
+
+      if (!currentWallet || !registeredWallet || currentWallet.toLowerCase() !== registeredWallet.toLowerCase()) {
+        toast.error('Connected wallet does not match your registered identity.', { id: toastId });
+        setPendingCandidateId(null);
+        return;
+      }
+
       setIsLoading(true);
       const contract = await getContract();
       if (!contract) return;
@@ -203,11 +221,10 @@ export const VotingProvider = ({ children }) => {
 
       toast.success('Vote cast successfully!', { id: toastId });
       setHasVoted(true);
-      setIsOtpVerified(false);
       setPendingCandidateId(null);
-      await loadCandidates();
+      await loadCandidates(contract);
     } catch (err) {
-      console.error('[VotingContext] vote error:', err);
+      console.error('[VotingContext] executeVoteOnChain error:', err);
       toast.error(err.reason ?? err.message ?? 'Vote failed.', { id: toastId });
     } finally {
       setIsLoading(false);
@@ -215,11 +232,8 @@ export const VotingProvider = ({ children }) => {
   };
 
   const onOtpVerified = () => {
-    setIsOtpVerified(true);
     if (pendingCandidateId !== null) {
-      setTimeout(() => {
-        vote(pendingCandidateId);
-      }, 500);
+      executeVoteOnChain(pendingCandidateId);
     }
   };
 
@@ -297,8 +311,19 @@ export const VotingProvider = ({ children }) => {
 
     const handleAccountsChanged = (accounts) => {
       if (accounts.length > 0) {
-        setCurrentAccount(accounts[0]);
-        loadInitialData(accounts[0]);
+        const newAccount = accounts[0];
+        setCurrentAccount(newAccount);
+
+        // Security reinforcement: if the new active MetaMask address does not match
+        // the logged-in user's registered wallet address, log them out immediately.
+        if (user && user.role !== 'admin' && user.walletAddress && user.walletAddress.toLowerCase() !== newAccount.toLowerCase()) {
+          toast.error('MetaMask account changed. Session terminated for security.', { id: 'wallet-change-logout' });
+          logout();
+          window.location.href = '/login';
+          return;
+        }
+
+        loadInitialData(newAccount);
       } else {
         setCurrentAccount('');
         setIsAdmin(false);

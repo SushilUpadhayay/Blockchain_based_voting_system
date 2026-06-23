@@ -49,6 +49,31 @@ async function main() {
   fs.writeFileSync(abiDestPath, JSON.stringify(artifact.abi, null, 2));
   console.log(`ABI copied     → ${abiDestPath}`);
 
+  // ── Patch backend/.env with new CONTRACT_ADDRESS ──
+  const backendEnvPath = path.join(__dirname, "../backend/.env");
+  if (fs.existsSync(backendEnvPath)) {
+    let envContent = fs.readFileSync(backendEnvPath, "utf8");
+    if (/^CONTRACT_ADDRESS=.*$/m.test(envContent)) {
+      // Replace the existing CONTRACT_ADDRESS line
+      envContent = envContent.replace(
+        /^CONTRACT_ADDRESS=.*$/m,
+        `CONTRACT_ADDRESS=${contractAddress}`
+      );
+    } else {
+      // Append if it doesn't exist yet
+      envContent += `\nCONTRACT_ADDRESS=${contractAddress}\n`;
+    }
+    fs.writeFileSync(backendEnvPath, envContent);
+    console.log(`backend/.env   → CONTRACT_ADDRESS updated to ${contractAddress}`);
+  } else {
+    console.warn("⚠️  backend/.env not found — skipping auto-patch. Set CONTRACT_ADDRESS manually.");
+  }
+
+  // ── Copy compiled ABI to backend config ──
+  const backendAbiPath = path.join(__dirname, "../backend/src/config/contractABI.json");
+  fs.writeFileSync(backendAbiPath, JSON.stringify(artifact, null, 2));
+  console.log(`ABI copied     → ${backendAbiPath}`);
+
   // ── Summary ───
   console.log("\n" + "=".repeat(50));
   console.log("  Deployment Complete");
@@ -57,8 +82,10 @@ async function main() {
   console.log(`Admin (deployer) : ${deployer.address}`);
   console.log(`\nNext steps:`);
   console.log(`  1. Run initializer : npx hardhat run scripts/initialize.js --network localhost`);
-  console.log(`  2. Start frontend  : cd frontend && npm run dev`);
-  console.log(`  3. MetaMask RPC    : http://127.0.0.1:8545  (Chain ID: 31337)\n`);
+  console.log(`  2. RESTART backend : (stop & re-run npm run dev in backend/)`);
+  console.log(`  3. Start frontend  : cd frontend && npm run dev`);
+  console.log(`  4. Reset MetaMask  : Settings → Advanced → "Clear activity tab data" or "Reset account"`);
+  console.log(`  5. MetaMask RPC    : http://127.0.0.1:8545  (Chain ID: 31337)\n`);
 }
 
 main().catch((error) => {

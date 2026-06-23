@@ -2,7 +2,7 @@ import React from 'react';
 import { useVoting } from '../context/VotingContext';
 import CandidateCard from './CandidateCard';
 
-import { Wallet, Activity, RefreshCw, AlertTriangle, ServerCrash } from 'lucide-react';
+import { Wallet, Activity, RefreshCw, AlertTriangle, ServerCrash, LogOut } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
@@ -60,7 +60,7 @@ const Dashboard = () => {
             <span className="font-semibold">Contract Not Deployed — </span>
             No contract found at the configured address. Run:
             <code className="ml-2 bg-orange-700 px-2 py-0.5 rounded text-xs">
-              npx hardhat run scripts/deploy.js --network localhost
+               npx hardhat run scripts/deploy.js --network localhost
             </code>
           </div>
         </div>
@@ -103,6 +103,15 @@ const Dashboard = () => {
               style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-color)', borderColor: 'var(--border-color)' }}
             >
               <RefreshCw className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} />
+            </button>
+
+            <button
+              onClick={handleLogout}
+              title="Logout"
+              className="p-2 opacity-70 hover:opacity-100 hover:text-red-600 dark:hover:text-red-400 rounded-lg transition-colors border shadow-sm"
+              style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-color)', borderColor: 'var(--border-color)' }}
+            >
+              <LogOut className="w-5 h-5" />
             </button>
           </div>
         </div>

@@ -2,7 +2,6 @@ const { ethers } = require('ethers');
 
 // Configuration
 const RPC_URL = 'http://127.0.0.1:8545';
-const contractAddress = process.env.CONTRACT_ADDRESS;
 
 // Lazy Contract Instance
 // We initialize the contract on first use rather than at module load.
@@ -10,6 +9,13 @@ const contractAddress = process.env.CONTRACT_ADDRESS;
 let _contract = null;
 let _provider = null;
 let _lastKnownBlockHash = null; // used to detect Hardhat node resets
+let _lastKnownContractAddress = null; // used to detect redeployments
+
+const getContractAddress = () => {
+  const path = require('path');
+  require('dotenv').config({ path: path.join(__dirname, '../../.env'), override: true });
+  return process.env.CONTRACT_ADDRESS;
+};
 
 /**
  * Detects if the Hardhat node has been restarted by checking whether the
@@ -40,14 +46,24 @@ const getContract = async () => {
       _provider = new ethers.JsonRpcProvider(RPC_URL);
     }
 
-    // If node was restarted, discard cached contract so it's rebuilt
-    if (_contract && await hasNodeRestarted(_provider)) {
+    const currentContractAddress = getContractAddress();
+
+    // If node was restarted or contract address changed, discard cached contract so it's rebuilt
+    const nodeRestarted = _contract && await hasNodeRestarted(_provider);
+    const addressChanged = _contract && _lastKnownContractAddress !== currentContractAddress;
+
+    if (nodeRestarted || addressChanged) {
+      console.log(`[BlockchainService] Rebuilding contract instance. Reason: ${nodeRestarted ? 'Node restarted' : 'Contract address changed'}`);
       _contract = null;
     }
 
     if (!_contract) {
+      if (!currentContractAddress) {
+        throw new Error('CONTRACT_ADDRESS is not set in backend/.env');
+      }
       const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, _provider);
-      _contract = new ethers.Contract(contractAddress, abi, wallet);
+      _contract = new ethers.Contract(currentContractAddress, abi, wallet);
+      _lastKnownContractAddress = currentContractAddress;
       // Capture current genesis hash on first build
       const genesisBlock = await _provider.getBlock(0);
       if (genesisBlock) _lastKnownBlockHash = genesisBlock.hash;
