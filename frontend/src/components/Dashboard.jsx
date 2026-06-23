@@ -1,8 +1,7 @@
 import React from 'react';
 import { useVoting } from '../context/VotingContext';
 import CandidateCard from './CandidateCard';
-
-import { Wallet, Activity, RefreshCw, AlertTriangle, ServerCrash, LogOut } from 'lucide-react';
+import { Wallet, Activity, RefreshCw, AlertTriangle, ServerCrash, LogOut, Trophy } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
@@ -12,7 +11,6 @@ const Dashboard = () => {
     connectWallet,
     candidates,
     electionStatus,
-    loadCandidates,
     loadInitialData,
     isLoading,
     networkOk,
@@ -20,14 +18,17 @@ const Dashboard = () => {
     contractFound,
     REQUIRED_CHAIN_ID,
     RPC_URL,
+    winner,
   } = useVoting();
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  const isAdminRole = user?.role === 'admin';
-
   const status = user?.status || 'pending';
   const rejectionReason = user?.rejectionReason || 'No reason provided';
+
+  const electionEnded = electionStatus.started && !electionStatus.active;
+  const totalVotes = candidates.reduce((sum, c) => sum + Number(c.voteCount), 0);
+  const sortedCandidates = [...candidates].sort((a, b) => Number(b.voteCount) - Number(a.voteCount));
 
   const handleLogout = () => {
     logout();
@@ -108,7 +109,7 @@ const Dashboard = () => {
             <button
               onClick={handleLogout}
               title="Logout"
-              className="p-2 opacity-70 hover:opacity-100 hover:text-red-600 dark:hover:text-red-400 rounded-lg transition-colors border shadow-sm"
+              className="p-2 opacity-70 hover:opacity-100 hover:text-red-600 rounded-lg transition-colors border shadow-sm"
               style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-color)', borderColor: 'var(--border-color)' }}
             >
               <LogOut className="w-5 h-5" />
@@ -126,6 +127,7 @@ const Dashboard = () => {
               If you believe this is an error, please contact support.
             </p>
           </div>
+
         ) : status === 'rejected' ? (
           <div className="flex flex-col items-center justify-center p-12 rounded-2xl border border-orange-200 bg-orange-50 text-center">
             <AlertTriangle className="w-12 h-12 mb-4 text-orange-600" />
@@ -140,9 +142,10 @@ const Dashboard = () => {
               onClick={() => navigate('/register')}
               className="bg-orange-600 hover:bg-orange-700 text-white px-6 py-3 rounded-lg font-medium transition-colors shadow-sm"
             >
-              Update & Resubmit
+              Update &amp; Resubmit
             </button>
           </div>
+
         ) : status === 'pending' ? (
           <div className="flex flex-col items-center justify-center p-12 rounded-2xl border border-blue-200 bg-blue-50 text-center">
             <Activity className="w-12 h-12 mb-4 text-blue-600 animate-pulse" />
@@ -155,9 +158,10 @@ const Dashboard = () => {
               Status: Waiting for Admin Approval
             </div>
           </div>
+
         ) : (
           <>
-            {/* Registered user — show candidates / connect prompt */}
+            {/* Wallet not connected */}
             {!currentAccount ? (
               <div
                 className="flex flex-col items-center justify-center p-12 rounded-2xl border border-dashed transition-colors"
@@ -175,16 +179,87 @@ const Dashboard = () => {
                   Connect MetaMask
                 </button>
               </div>
+
+            ) : electionEnded ? (
+              /* ── ELECTION RESULTS VIEW ── */
+              <div className="space-y-6">
+                {/* Results Header */}
+                <div className="bg-gradient-to-br from-indigo-600 to-purple-700 rounded-2xl p-8 text-white shadow-xl flex items-center justify-between">
+                  <div>
+                    <h2 className="text-3xl font-bold mb-2">Election Results</h2>
+                    <p className="opacity-90">The election has concluded. Here are the final results.</p>
+                    <p className="text-indigo-200 text-sm mt-1">Total votes cast: <strong className="text-white">{totalVotes}</strong></p>
+                  </div>
+                  <Trophy className="w-16 h-16 opacity-40 hidden sm:block" />
+                </div>
+
+                {/* Winner Banner */}
+                {winner && (
+                  <div className="bg-yellow-50 border-2 border-yellow-300 p-6 rounded-2xl flex items-center gap-5 shadow-md">
+                    <div className="bg-yellow-400 p-4 rounded-full shadow-inner">
+                      <Trophy className="w-8 h-8 text-yellow-900" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-yellow-700 uppercase tracking-widest mb-1">🎉 Winner</p>
+                      <p className="text-3xl font-extrabold text-yellow-900">{winner}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Ranked Results List */}
+                <div className="rounded-2xl border shadow-sm overflow-hidden" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
+                  <div className="p-5 border-b font-bold text-sm uppercase tracking-widest opacity-60" style={{ borderColor: 'var(--border-color)', color: 'var(--text-color)' }}>
+                    Candidate Rankings
+                  </div>
+                  <div className="p-6 space-y-4">
+                    {sortedCandidates.map((c, index) => {
+                      const pct = totalVotes > 0 ? (Number(c.voteCount) / totalVotes) * 100 : 0;
+                      const isTop = index === 0 && Number(c.voteCount) > 0;
+                      const barColors = ['bg-yellow-400', 'bg-slate-400', 'bg-orange-400', 'bg-blue-400', 'bg-purple-400'];
+                      const rankColors = ['text-yellow-500', 'text-gray-400', 'text-orange-400'];
+                      return (
+                        <div
+                          key={c.id}
+                          className={`p-4 rounded-xl transition-all ${isTop ? 'border-2 border-yellow-200 bg-yellow-50/60' : ''}`}
+                          style={isTop ? {} : { backgroundColor: 'var(--bg-color)' }}
+                        >
+                          <div className="flex items-center gap-3 mb-2">
+                            <span className={`text-xl font-black min-w-[2rem] ${rankColors[index] ?? 'text-gray-300'}`}>
+                              #{index + 1}
+                            </span>
+                            {isTop && <Trophy className="w-4 h-4 text-yellow-500" />}
+                            <span className="font-semibold flex-1 text-base" style={{ color: 'var(--text-color)' }}>{c.name}</span>
+                            <span className="font-bold text-lg" style={{ color: 'var(--text-color)' }}>{c.voteCount}</span>
+                            <span className="text-sm font-semibold w-12 text-right opacity-60" style={{ color: 'var(--text-color)' }}>
+                              {Math.round(pct)}%
+                            </span>
+                          </div>
+                          <div className="w-full h-3 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--border-color)' }}>
+                            <div
+                              className={`h-full rounded-full transition-all duration-700 ${barColors[index] ?? 'bg-blue-400'}`}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {sortedCandidates.length === 0 && (
+                      <p className="text-center py-8 opacity-50" style={{ color: 'var(--text-color)' }}>No candidates in this election.</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
             ) : candidates.length === 0 ? (
               <div
                 className="text-center p-12 rounded-2xl border transition-colors"
                 style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}
               >
-                <p className="opacity-70" style={{ color: 'var(--text-color)' }}>
-                  No candidates found for this election.
-                </p>
+                <p className="opacity-70" style={{ color: 'var(--text-color)' }}>No candidates found for this election.</p>
               </div>
+
             ) : (
+              /* ── LIVE VOTING GRID ── */
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {candidates.map((candidate) => (
                   <CandidateCard key={candidate.id} candidate={candidate} />

@@ -14,7 +14,9 @@ import {
   Wallet,
   FileText,
   Download,
-  X
+  X,
+  Trophy,
+  BarChart2,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useVoting } from '../context/VotingContext';
@@ -33,6 +35,7 @@ const AdminDashboard = () => {
     candidates,
     currentAccount,
     connectWallet,
+    winner,
   } = useVoting();
 
   const [users, setUsers] = useState([]);
@@ -680,6 +683,91 @@ const AdminDashboard = () => {
             )}
           </div>
         </section>
+
+        {/* SEC E: ELECTION RESULTS — shown only when election has ended */}
+        {electionStatus.started && !electionStatus.active && (
+          <section
+            className="rounded-2xl shadow-sm border overflow-hidden transition-all mt-8"
+            style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}
+          >
+            <div
+              className="p-6 border-b flex items-center justify-between"
+              style={{ borderColor: 'var(--border-color)' }}
+            >
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-yellow-50 rounded-lg">
+                  <Trophy className="w-5 h-5 text-yellow-500" />
+                </div>
+                <h2 className="text-xl font-bold" style={{ color: 'var(--text-color)' }}>
+                  Election Results
+                </h2>
+              </div>
+              <span className="bg-red-100 text-red-700 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">
+                Election Closed
+              </span>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {/* Winner Banner */}
+              {winner && (
+                <div className="flex items-center gap-5 p-5 bg-yellow-50 border-2 border-yellow-300 rounded-xl shadow">
+                  <div className="bg-yellow-400 p-4 rounded-full">
+                    <Trophy className="w-7 h-7 text-yellow-900" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-yellow-700 uppercase tracking-widest mb-1">🏆 Winner</p>
+                    <p className="text-2xl font-extrabold text-yellow-900">{winner}</p>
+                  </div>
+                  <div className="ml-auto text-right">
+                    <p className="text-xs text-yellow-700 opacity-70">Total votes</p>
+                    <p className="text-2xl font-black text-yellow-900">
+                      {candidates.reduce((sum, c) => sum + Number(c.voteCount), 0)}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Ranked Results */}
+              {(() => {
+                const totalVotes = candidates.reduce((sum, c) => sum + Number(c.voteCount), 0);
+                const sorted = [...candidates].sort((a, b) => Number(b.voteCount) - Number(a.voteCount));
+                const barColors = ['bg-yellow-400', 'bg-slate-400', 'bg-orange-400', 'bg-blue-400', 'bg-purple-400'];
+                const rankColors = ['text-yellow-500', 'text-gray-400', 'text-orange-400'];
+                return sorted.map((c, index) => {
+                  const pct = totalVotes > 0 ? (Number(c.voteCount) / totalVotes) * 100 : 0;
+                  return (
+                    <div
+                      key={c.id}
+                      className="p-4 rounded-xl"
+                      style={{ backgroundColor: 'var(--bg-color)' }}
+                    >
+                      <div className="flex items-center gap-3 mb-2">
+                        <span className={`text-lg font-black min-w-[2rem] ${rankColors[index] ?? 'text-gray-300'}`}>
+                          #{index + 1}
+                        </span>
+                        <span className="font-semibold flex-1" style={{ color: 'var(--text-color)' }}>{c.name}</span>
+                        <span className="font-bold" style={{ color: 'var(--text-color)' }}>{c.voteCount} votes</span>
+                        <span className="text-sm opacity-60 w-10 text-right" style={{ color: 'var(--text-color)' }}>
+                          {Math.round(pct)}%
+                        </span>
+                      </div>
+                      <div className="w-full h-3 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--border-color)' }}>
+                        <div
+                          className={`h-full rounded-full transition-all duration-700 ${barColors[index] ?? 'bg-blue-400'}`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+
+              {candidates.length === 0 && (
+                <p className="text-center py-8 opacity-50" style={{ color: 'var(--text-color)' }}>No candidates found.</p>
+              )}
+            </div>
+          </section>
+        )}
       </div>
 
       {/* Reusable Confirm Dialog */}

@@ -35,12 +35,32 @@ const Login = () => {
         
         // Connect wallet
         const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-        const currentWallet = accounts[0];
+        let currentWallet = accounts[0];
         
         if (currentWallet.toLowerCase() !== walletAddress.toLowerCase()) {
-          toast.error(`Connected wallet does not match registered wallet for this account.\nExpected: ${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`, { id: "login-wallet", duration: 5000 });
-          setLoading(false);
-          return;
+          try {
+            toast.loading("Wallet mismatch. Opening MetaMask account selector...", { id: "login-wallet" });
+            
+            // Force MetaMask to display the account selection modal
+            await window.ethereum.request({
+              method: 'wallet_requestPermissions',
+              params: [{ eth_accounts: {} }]
+            });
+            
+            const accountsAfter = await window.ethereum.request({ method: 'eth_accounts' });
+            const newWallet = accountsAfter[0];
+            
+            if (newWallet.toLowerCase() !== walletAddress.toLowerCase()) {
+              toast.error(`Connected wallet does not match registered wallet for this account.\nExpected: ${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}\nGot: ${newWallet.slice(0, 6)}...${newWallet.slice(-4)}`, { id: "login-wallet", duration: 8000 });
+              setLoading(false);
+              return;
+            }
+            currentWallet = newWallet;
+          } catch (permErr) {
+            toast.error(`Connected wallet does not match registered wallet.\nExpected: ${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}\nGot: ${currentWallet.slice(0, 6)}...${currentWallet.slice(-4)}`, { id: "login-wallet", duration: 8000 });
+            setLoading(false);
+            return;
+          }
         }
         
         // Prompt user to sign the dynamic server challenge

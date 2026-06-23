@@ -34,6 +34,7 @@ export const VotingProvider = ({ children }) => {
   const [contractFound, setContractFound] = useState(true);
   const [isOtpModalOpen, setIsOtpModalOpen] = useState(false);
   const [pendingCandidateId, setPendingCandidateId] = useState(null);
+  const [winner, setWinner] = useState(null);
 
   // ── Helpers ──
   const checkNetwork = useCallback(async (provider) => {
@@ -124,6 +125,19 @@ export const VotingProvider = ({ children }) => {
       setHasVoted(voted);
 
       await loadCandidates(contract);
+
+      // If election has ended, fetch the winner
+      if (started && !active) {
+        try {
+          const winnerName = await contract.getWinner();
+          setWinner(winnerName);
+        } catch (winnerErr) {
+          console.warn('[VotingContext] getWinner failed (possibly no votes cast):', winnerErr.message);
+          setWinner(null);
+        }
+      } else {
+        setWinner(null);
+      }
     } catch (err) {
       console.error('[VotingContext] loadInitialData failed:', err.message);
     } finally {
@@ -295,6 +309,15 @@ export const VotingProvider = ({ children }) => {
 
       toast.success('Election ended.', { id: toastId });
       setElectionStatus((prev) => ({ ...prev, active: false }));
+
+      // Fetch winner after election ends
+      try {
+        const winnerName = await contract.getWinner();
+        setWinner(winnerName);
+      } catch (winnerErr) {
+        console.warn('[VotingContext] getWinner after endElection failed:', winnerErr.message);
+        setWinner(null);
+      }
     } catch (err) {
       console.error('[VotingContext] endElection error:', err);
       toast.error(err.reason ?? err.message ?? 'Failed to end election.', { id: toastId });
@@ -361,11 +384,11 @@ export const VotingProvider = ({ children }) => {
         RPC_URL,
         CHAIN_NAME,
         pendingCandidateId,
+        winner,
         vote,
         loadCandidates,
         loadInitialData,
         addCandidate,
-
         startElection,
         endElection,
       }}

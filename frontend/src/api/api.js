@@ -8,10 +8,10 @@ const API = axios.create({
 });
 
 // Request Interceptor
-// Automatically attach the JWT token from localStorage to every request.
+// Automatically attach the JWT token from sessionStorage to every request.
 API.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token');
+    const token = sessionStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -33,8 +33,8 @@ API.interceptors.response.use(
       const isAuthEndpoint = url.includes('/auth/');
 
       if (!isAuthEndpoint) {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
+        sessionStorage.removeItem('token');
+        sessionStorage.removeItem('user');
         
         // Prevent redirecting if the user is already on a public page
         const publicPaths = ['/', '/register', '/login'];

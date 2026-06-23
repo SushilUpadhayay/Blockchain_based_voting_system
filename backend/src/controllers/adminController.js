@@ -160,7 +160,7 @@ const addCandidate = async (req, res, next) => {
 // @access  Private/Admin
 const getRegisteredUsers = async (req, res, next) => {
   try {
-    const registeredUsers = await User.find({ status: 'registered' });
+    const registeredUsers = await User.find({ status: 'registered', role: 'user' });
     res.json(registeredUsers);
   } catch (error) {
     next(error);

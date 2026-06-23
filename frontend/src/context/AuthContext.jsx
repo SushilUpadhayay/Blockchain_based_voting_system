@@ -7,7 +7,7 @@ const AuthContext = createContext();
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
-  const [token, setTokenState] = useState(localStorage.getItem('token'));
+  const [token, setTokenState] = useState(sessionStorage.getItem('token'));
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -17,9 +17,9 @@ export const AuthProvider = ({ children }) => {
   const setToken = (newToken) => {
     setTokenState(newToken);
     if (newToken) {
-      localStorage.setItem('token', newToken);
+      sessionStorage.setItem('token', newToken);
     } else {
-      localStorage.removeItem('token');
+      sessionStorage.removeItem('token');
     }
   };
 
@@ -29,7 +29,7 @@ export const AuthProvider = ({ children }) => {
     if (userData) {
       const verifiedUser = { ...userData, isVerified: true };
       setUser(verifiedUser);
-      localStorage.setItem('user', JSON.stringify(verifiedUser));
+      sessionStorage.setItem('user', JSON.stringify(verifiedUser));
     }
   };
 
@@ -37,8 +37,8 @@ export const AuthProvider = ({ children }) => {
   const logout = (showToast = true) => {
     setToken(null);
     setUser(null);
-    localStorage.removeItem('user');
-    localStorage.removeItem('token');
+    sessionStorage.removeItem('user');
+    sessionStorage.removeItem('token');
     if (showToast) {
       toast.success('Logged out successfully', {
         icon: '👋',
@@ -50,7 +50,7 @@ export const AuthProvider = ({ children }) => {
   // ── Validate stored token and load user profile on startup
   useEffect(() => {
     const checkAuth = async () => {
-      const storedToken = localStorage.getItem('token');
+      const storedToken = sessionStorage.getItem('token');
       if (storedToken) {
         try {
           // Verify JWT with the backend before considering the user authenticated
@@ -60,7 +60,7 @@ export const AuthProvider = ({ children }) => {
           // Rehydrate validated user state
           const verifiedUser = { ...userData, isVerified: true };
           setUser(verifiedUser);
-          localStorage.setItem('user', JSON.stringify(verifiedUser));
+          sessionStorage.setItem('user', JSON.stringify(verifiedUser));
         } catch (error) {
           console.error('[AuthContext] Session validation failed on startup:', error.message);
           // Token is expired, invalid, user is blocked/rejected, or session fails
