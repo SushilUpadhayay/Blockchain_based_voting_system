@@ -45,7 +45,19 @@ const registerInit = async (req, res, next) => {
     // 1. Verify cryptographic proof of wallet ownership
     await verifySignature(walletAddress, signature, message);
 
-    // 2. Proceed with checking if user/ID already exists
+    // 2. Check if this wallet address is already claimed by ANY existing account.
+    //    This prevents a user from bypassing checks by registering with a new
+    //    email / ID number while reusing the same wallet.
+    const walletOwner = await User.findOne({ walletAddress });
+    if (walletOwner) {
+      res.status(409);
+      throw new Error(
+        'This wallet address is already linked to an existing account. ' +
+        'Each wallet can only be associated with one identity.'
+      );
+    }
+
+    // 3. Proceed with checking if email/ID already exists
     const user = await User.findOne({
       $or: [
         { email },
@@ -154,7 +166,7 @@ const verifyRegisterOtp = async (req, res, next) => {
     }
 
     // OTP is valid. Check DB one last time to prevent race conditions
-    let user = await User.findOne({ email });
+    let user = await User.findOne({ email: email.toLowerCase() });
 
     if (user) {
       user.name = record.userData.name;
@@ -211,11 +223,11 @@ const loginUser = async (req, res, next) => {
       throw new Error('Please provide a valid email address');
     }
 
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email: email.toLowerCase() });
 
     if (!user) {
       res.status(401);
-      throw new Error('User not registered');
+      throw new Error('User not registered. Please complete registration first.');
     }
 
     if (user.status === 'blocked') {
@@ -319,11 +331,11 @@ const verifyOtp = async (req, res, next) => {
       throw new Error('Email and OTP are required');
     }
 
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email: email.toLowerCase() });
 
     if (!user) {
       res.status(401);
-      throw new Error('User not registered');
+      throw new Error('User not registered. Please complete registration first.');
     }
 
     if (user.status === 'blocked') {

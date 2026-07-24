@@ -18,10 +18,10 @@ const {
   validateVerifyOtp,
   validateVerifyVoteOtp
 } = require('../middleware/validator');
-const { authLimiter, nonceLimiter } = require('../middleware/rateLimiter');
+const { authLimiter, nonceLimiter, registrationLimiter } = require('../middleware/rateLimiter');
 
 router.get('/nonce', nonceLimiter, validateNonceFetch, getWalletNonce);
-router.post('/register-init', authLimiter, validateRegisterInit, registerInit);
+router.post('/register-init', registrationLimiter, authLimiter, validateRegisterInit, registerInit);
 router.post('/verify-register-otp', authLimiter, validateVerifyRegisterOtp, verifyRegisterOtp);
 router.post('/login', authLimiter, validateLogin, loginUser);
 router.post('/verify-otp', authLimiter, validateVerifyOtp, verifyOtp);

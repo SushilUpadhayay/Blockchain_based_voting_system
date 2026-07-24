@@ -10,6 +10,8 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: true,
       unique: true,
+      lowercase: true,
+      trim: true,
     },
     idNumber: {
       type: String,
@@ -48,6 +50,8 @@ const userSchema = new mongoose.Schema(
       required: function () {
         return this.role === 'user';
       },
+      unique: true,
+      sparse: true, // allows multiple admins with no walletAddress without colliding
     },
     role: {
       type: String,
