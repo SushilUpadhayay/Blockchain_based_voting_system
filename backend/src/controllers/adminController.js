@@ -1,5 +1,6 @@
 const User = require('../models/User');
-const { registerVoterOnChain, startElectionOnChain, endElectionOnChain, addCandidateOnChain, isVoterAuthorizedOnChain, getElectionStatusOnChain } = require('../services/blockchainService');
+const Candidate = require('../models/Candidate');
+const { registerVoterOnChain, startElectionOnChain, endElectionOnChain, addCandidateOnChain, isVoterAuthorizedOnChain, getElectionStatusOnChain, getCandidatesFromChain } = require('../services/blockchainService');
 const { sendStatusNotificationEmail } = require('../services/otpService');
 
 /**
@@ -168,22 +169,77 @@ const endElection = async (req, res, next) => {
   }
 };
 
-// @desc    Add a new candidate
+// @desc    Add a new candidate with optional photo & party
 // @route   POST /api/admin/add-candidate
 // @access  Private/Admin
 const addCandidate = async (req, res, next) => {
   try {
-    const { name } = req.body;
+    const { name, party } = req.body;
     if (!name) {
       res.status(400);
       throw new Error("Candidate name is required");
     }
+
+    // 1. Add candidate to blockchain
     await addCandidateOnChain(name);
-    res.json({ message: 'Candidate added successfully to blockchain' });
+
+    // 2. Fetch candidates from blockchain to get assigned candidate ID
+    const onChainCandidates = await getCandidatesFromChain();
+    const newCandidate = onChainCandidates.find(c => c.name === name) || onChainCandidates[onChainCandidates.length - 1];
+
+    let photoPath = null;
+    if (req.file) {
+      photoPath = `/uploads/candidates/${req.file.filename}`;
+    }
+
+    // 3. Store off-chain metadata (party & photo) in MongoDB
+    if (newCandidate) {
+      await Candidate.findOneAndUpdate(
+        { candidateId: newCandidate.id },
+        {
+          candidateId: newCandidate.id,
+          party: party ? party.trim() : '',
+          photoPath
+        },
+        { upsert: true, new: true }
+      );
+    }
+
+    res.json({ message: 'Candidate added successfully to blockchain', candidate: newCandidate });
   } catch (error) {
     next(error);
   }
 };
+
+// @desc    Get candidates merged with MongoDB metadata (photo & party)
+// @route   GET /api/admin/candidates-meta or GET /api/user/candidates-meta
+// @access  Private
+const getCandidatesMeta = async (req, res, next) => {
+  try {
+    const onChainCandidates = await getCandidatesFromChain();
+    const onChainIds = onChainCandidates.map(c => c.id);
+
+    // Auto-sync Mongo candidate metadata with current blockchain state (purges stale records if node reset)
+    await Candidate.syncWithChain(onChainIds);
+
+    const metadataDocs = await Candidate.find({ candidateId: { $in: onChainIds } });
+    const metaMap = {};
+    metadataDocs.forEach(doc => {
+      metaMap[doc.candidateId] = doc;
+    });
+
+    const merged = onChainCandidates.map(c => ({
+      ...c,
+      party: metaMap[c.id]?.party || '',
+      photoPath: metaMap[c.id]?.photoPath || null
+    }));
+
+    res.json(merged);
+  } catch (error) {
+    next(error);
+  }
+};
+
 
 
 // @desc    Get all registered users
@@ -273,6 +329,7 @@ module.exports = {
   startElection,
   endElection,
   addCandidate,
+  getCandidatesMeta,
   getRegisteredUsers,
   syncVoter
 };

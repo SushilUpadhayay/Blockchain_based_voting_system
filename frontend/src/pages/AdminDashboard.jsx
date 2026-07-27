@@ -39,11 +39,14 @@ const AdminDashboard = () => {
     currentAccount,
     connectWallet,
     winner,
+    loadCandidates,
   } = useVoting();
 
   const [users, setUsers] = useState([]);
   const [registeredUsers, setRegisteredUsers] = useState([]);
   const [candidateName, setCandidateName] = useState('');
+  const [candidateParty, setCandidateParty] = useState('');
+  const [candidatePhoto, setCandidatePhoto] = useState(null);
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
 
@@ -169,8 +172,30 @@ const AdminDashboard = () => {
     if (!candidateName.trim()) {
       return toast.error('Candidate name is required');
     }
-    await addCandidate(candidateName.trim());
-    setCandidateName('');
+    const toastId = toast.loading(`Enrolling candidate ${candidateName}...`);
+    try {
+      setLoading(true);
+      const formData = new FormData();
+      formData.append('name', candidateName.trim());
+      formData.append('party', candidateParty.trim());
+      if (candidatePhoto) {
+        formData.append('photo', candidatePhoto);
+      }
+
+      await API.post('/admin/add-candidate', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      toast.success(`Candidate "${candidateName}" enrolled successfully!`, { id: toastId });
+      setCandidateName('');
+      setCandidateParty('');
+      setCandidatePhoto(null);
+      await loadCandidates();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to add candidate', { id: toastId });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const closeDialog = () => {
@@ -357,15 +382,58 @@ const AdminDashboard = () => {
                 </p>
               </div>
             ) : (
-              <form onSubmit={handleAddCandidate} className="flex flex-col sm:flex-row gap-4">
-                <div className="relative flex-1">
+              <form onSubmit={handleAddCandidate} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--text-color)' }}>
+                      Candidate Full Name *
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Ram Bahadur Thapa"
+                      value={candidateName}
+                      onChange={(e) => setCandidateName(e.target.value)}
+                      disabled={loading || blockchainLoading || electionStatus.started}
+                      className="w-full border p-3 rounded-xl outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-400 transition-all text-sm"
+                      style={{
+                        backgroundColor: 'var(--bg-color)',
+                        color: 'var(--text-color)',
+                        borderColor: 'var(--border-color)',
+                      }}
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--text-color)' }}>
+                      Political Party (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Democratic Alliance (leave blank for Independent)"
+                      value={candidateParty}
+                      onChange={(e) => setCandidateParty(e.target.value)}
+                      disabled={loading || blockchainLoading || electionStatus.started}
+                      className="w-full border p-3 rounded-xl outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-400 transition-all text-sm"
+                      style={{
+                        backgroundColor: 'var(--bg-color)',
+                        color: 'var(--text-color)',
+                        borderColor: 'var(--border-color)',
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--text-color)' }}>
+                    Candidate Photo (JPG / PNG)
+                  </label>
                   <input
-                    type="text"
-                    placeholder="Enter full name of candidate"
-                    value={candidateName}
-                    onChange={(e) => setCandidateName(e.target.value)}
-                    disabled={blockchainLoading || electionStatus.started || !currentAccount}
-                    className="w-full border p-3 pl-4 rounded-xl outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-400 transition-all"
+                    type="file"
+                    accept="image/jpeg,image/png,image/jpg"
+                    onChange={(e) => setCandidatePhoto(e.target.files[0] || null)}
+                    disabled={loading || blockchainLoading || electionStatus.started}
+                    className="w-full border p-2 rounded-xl text-sm outline-none transition-all file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                     style={{
                       backgroundColor: 'var(--bg-color)',
                       color: 'var(--text-color)',
@@ -373,12 +441,13 @@ const AdminDashboard = () => {
                     }}
                   />
                 </div>
+
                 <button
                   type="submit"
                   disabled={
-                    blockchainLoading || electionStatus.started || !candidateName.trim() || !currentAccount
+                    loading || blockchainLoading || electionStatus.started || !candidateName.trim()
                   }
-                  className="bg-gray-900 hover:bg-black disabled:opacity-50 text-white font-bold py-3 px-8 rounded-xl transition-all flex items-center justify-center gap-2"
+                  className="bg-gray-900 hover:bg-black disabled:opacity-50 text-white font-bold py-3 px-8 rounded-xl transition-all flex items-center justify-center gap-2 text-sm shadow-md"
                 >
                   <UserPlus className="w-4 h-4" />
                   Add to Ballot
@@ -393,14 +462,34 @@ const AdminDashboard = () => {
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="py-3 px-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">ID</th>
+                      <th className="py-3 px-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Photo</th>
                       <th className="py-3 px-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Candidate Name</th>
+                      <th className="py-3 px-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Party</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y" style={{ borderColor: 'var(--border-color)' }}>
-                    {candidates.map(candidate => (
+                    {candidates.map((candidate) => (
                       <tr key={candidate.id} className="hover:bg-gray-50 transition-colors">
                         <td className="py-3 px-4 text-sm font-medium text-gray-500">#{candidate.id}</td>
+                        <td className="py-3 px-4">
+                          {candidate.photoPath ? (
+                            <img
+                              src={`http://localhost:5000${candidate.photoPath}`}
+                              alt={candidate.name}
+                              className="w-9 h-9 rounded-full object-cover border border-gray-200"
+                            />
+                          ) : (
+                            <div className="w-9 h-9 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600">
+                              {candidate.name.charAt(0)}
+                            </div>
+                          )}
+                        </td>
                         <td className="py-3 px-4 text-sm font-semibold" style={{ color: 'var(--text-color)' }}>{candidate.name}</td>
+                        <td className="py-3 px-4 text-sm">
+                          <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                            {candidate.party || 'Independent'}
+                          </span>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -914,7 +1003,25 @@ const AdminDashboard = () => {
                         <span className={`text-lg font-black min-w-[2rem] ${rankColors[index] ?? 'text-gray-300'}`}>
                           #{index + 1}
                         </span>
-                        <span className="font-semibold flex-1" style={{ color: 'var(--text-color)' }}>{c.name}</span>
+                        {c.photoPath ? (
+                          <img
+                            src={`http://localhost:5000${c.photoPath}`}
+                            alt={c.name}
+                            className="w-10 h-10 rounded-full object-cover border border-gray-200"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600">
+                            {c.name.charAt(0)}
+                          </div>
+                        )}
+                        <div className="flex-1">
+                          <div className="font-semibold flex items-center gap-2" style={{ color: 'var(--text-color)' }}>
+                            {c.name}
+                          </div>
+                          <div className="text-xs text-blue-600 font-medium">
+                            {c.party || 'Independent'}
+                          </div>
+                        </div>
                         <span className="font-bold" style={{ color: 'var(--text-color)' }}>{c.voteCount} votes</span>
                         <span className="text-sm opacity-60 w-10 text-right" style={{ color: 'var(--text-color)' }}>
                           {Math.round(pct)}%

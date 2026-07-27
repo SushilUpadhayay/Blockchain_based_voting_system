@@ -181,8 +181,26 @@ const VotingDashboard = () => {
                         <span className={`text-xl font-black min-w-[2rem] ${rankColors[index] ?? 'text-gray-300'}`}>
                           #{index + 1}
                         </span>
-                        {isTop && <Trophy className="w-4 h-4 text-yellow-500" />}
-                        <span className="font-semibold flex-1 text-base" style={{ color: 'var(--text-color)' }}>{c.name}</span>
+                        {c.photoPath ? (
+                          <img
+                            src={`http://localhost:5000${c.photoPath}`}
+                            alt={c.name}
+                            className="w-10 h-10 rounded-full object-cover border border-gray-200"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600">
+                            {c.name.charAt(0)}
+                          </div>
+                        )}
+                        <div className="flex-1">
+                          <div className="font-semibold text-base flex items-center gap-2" style={{ color: 'var(--text-color)' }}>
+                            {c.name}
+                            {isTop && <Trophy className="w-4 h-4 text-yellow-500" />}
+                          </div>
+                          <div className="text-xs text-blue-600 font-medium">
+                            {c.party || 'Independent'}
+                          </div>
+                        </div>
                         <span className="font-bold text-lg" style={{ color: 'var(--text-color)' }}>{c.voteCount}</span>
                         <span className="text-sm font-semibold w-12 text-right opacity-60" style={{ color: 'var(--text-color)' }}>
                           {Math.round(pct)}%

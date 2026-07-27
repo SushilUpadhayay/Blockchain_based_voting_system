@@ -182,6 +182,25 @@ const getElectionStatusOnChain = async () => {
   }
 };
 
+/**
+ * Reads all candidates from the blockchain.
+ * Returns an array of plain objects: { id, name, voteCount }
+ */
+const getCandidatesFromChain = async () => {
+  try {
+    const contract = await getContract();
+    const data = await contract.getCandidates();
+    return data.map((c) => ({
+      id: Number(c.id),
+      name: c.name,
+      voteCount: Number(c.voteCount),
+    }));
+  } catch (error) {
+    console.error('[BlockchainService] getCandidatesFromChain error:', error.message);
+    throw new Error('Failed to read candidates from blockchain: ' + error.message);
+  }
+};
+
 module.exports = {
   registerVoterOnChain,
   addCandidateOnChain,
@@ -189,4 +208,5 @@ module.exports = {
   endElectionOnChain,
   isVoterAuthorizedOnChain,
   getElectionStatusOnChain,
+  getCandidatesFromChain,
 };

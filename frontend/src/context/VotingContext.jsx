@@ -10,6 +10,7 @@ import { CONTRACT_ABI, CONTRACT_ADDRESS } from '../utils/constants';
 import toast from 'react-hot-toast';
 import { useAuth } from './AuthContext';
 import OTPModal from '../components/OTPModal';
+import API from '../api/api';
 
 // ── Network config (from .env) ──
 const REQUIRED_CHAIN_ID = Number(import.meta.env.VITE_CHAIN_ID ?? 31337);
@@ -91,17 +92,36 @@ export const VotingProvider = ({ children }) => {
       if (!contract) return;
 
       const data = await contract.getCandidates();
-      setCandidates(
-        data.map((c) => ({
-          id: Number(c.id),
-          name: c.name,
-          voteCount: Number(c.voteCount),
-        }))
-      );
+      const rawCandidates = data.map((c) => ({
+        id: Number(c.id),
+        name: c.name,
+        voteCount: Number(c.voteCount),
+      }));
+
+      // Fetch off-chain metadata (party & photo) from backend
+      try {
+        const endpoint = user?.role === 'admin' ? '/admin/candidates-meta' : '/user/candidates-meta';
+        const metaRes = await API.get(endpoint);
+        const metaMap = {};
+        if (Array.isArray(metaRes.data)) {
+          metaRes.data.forEach((item) => {
+            metaMap[item.id] = item;
+          });
+        }
+        setCandidates(
+          rawCandidates.map((c) => ({
+            ...c,
+            party: metaMap[c.id]?.party || '',
+            photoPath: metaMap[c.id]?.photoPath || null,
+          }))
+        );
+      } catch (metaErr) {
+        setCandidates(rawCandidates);
+      }
     } catch (err) {
       console.error('[VotingContext] loadCandidates failed:', err.message);
     }
-  }, [getContract]);
+  }, [getContract, user]);
 
   const loadInitialData = useCallback(async (account) => {
     // Skip blockchain queries for users who are not yet registered/approved.
