@@ -17,6 +17,9 @@ import {
   X,
   Trophy,
   BarChart2,
+  ScanLine,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useVoting } from '../context/VotingContext';
@@ -53,6 +56,8 @@ const AdminDashboard = () => {
   });
 
   const [selectedDocument, setSelectedDocument] = useState(null);
+  // Track which pending user row has its OCR panel open
+  const [expandedOcrRow, setExpandedOcrRow] = useState(null);
 
   useEffect(() => {
     if (user?.role === 'admin') {
@@ -175,16 +180,15 @@ const AdminDashboard = () => {
   const getDocumentUrl = (docPath) => {
     if (!docPath) return '#';
     const baseUrl = API.defaults.baseURL.replace(/\/api$/, '');
-    // Extract just the filename, ignoring the absolute server directories
     const filename = docPath.split(/[\\/]/).pop();
     return `${baseUrl}/uploads/${filename}`;
   };
 
-  const handleViewDocument = (docPath) => {
+  const handleViewDocument = (docPath, label) => {
     if (!docPath) return;
     const url = getDocumentUrl(docPath);
     const type = docPath.toLowerCase().endsWith('.pdf') ? 'pdf' : 'image';
-    setSelectedDocument({ url, type });
+    setSelectedDocument({ url, type, label });
   };
 
   const handleDownload = async (url, filename) => {
@@ -460,7 +464,10 @@ const AdminDashboard = () => {
                       ID Number
                     </th>
                     <th className="py-4 px-6 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
-                      Document
+                      Documents
+                    </th>
+                    <th className="py-4 px-6 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
+                      OCR Data
                     </th>
                     <th className="py-4 px-6 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
                       Blockchain Wallet
@@ -472,75 +479,227 @@ const AdminDashboard = () => {
                 </thead>
                 <tbody className="divide-y" style={{ borderColor: 'var(--border-color)' }}>
                   {users.map((u) => (
-                    <tr key={u._id} className="hover:opacity-80 transition-colors">
-                      <td className="py-4 px-6">
-                        <div className="font-semibold" style={{ color: 'var(--text-color)' }}>
-                          {u.name}
-                        </div>
-                      </td>
-                      <td className="py-4 px-6 text-sm opacity-70" style={{ color: 'var(--text-color)' }}>
-                        {u.email}
-                      </td>
-                      <td className="py-4 px-6 text-sm font-mono opacity-70" style={{ color: 'var(--text-color)' }}>
-                        {u.idNumber}
-                      </td>
-                      <td className="py-4 px-6">
-                        {u.documentPath && u.documentPath !== 'pending_upload' ? (
-                          <button
-                            onClick={() => handleViewDocument(u.documentPath)}
-                            className="flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline focus:outline-none"
+                    <React.Fragment key={u._id}>
+                      <tr className="hover:opacity-80 transition-colors">
+                        {/* Applicant */}
+                        <td className="py-4 px-6">
+                          <div className="font-semibold" style={{ color: 'var(--text-color)' }}>{u.name}</div>
+                          <div className="text-xs opacity-50 mt-0.5" style={{ color: 'var(--text-color)' }}>
+                            DOB: {u.dob || '—'}
+                          </div>
+                        </td>
+
+                        {/* Contact */}
+                        <td className="py-4 px-6 text-sm opacity-70" style={{ color: 'var(--text-color)' }}>
+                          {u.email}
+                        </td>
+
+                        {/* ID Number */}
+                        <td className="py-4 px-6 text-sm font-mono opacity-70" style={{ color: 'var(--text-color)' }}>
+                          {u.idNumber}
+                        </td>
+
+                        {/* Documents — Front + Back */}
+                        <td className="py-4 px-6">
+                          <div className="flex flex-col gap-1.5">
+                            {u.documentFrontPath ? (
+                              <button
+                                onClick={() => handleViewDocument(u.documentFrontPath, 'Front Side')}
+                                className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline focus:outline-none"
+                              >
+                                <FileText className="w-3.5 h-3.5" /> Front
+                              </button>
+                            ) : u.documentPath && u.documentPath !== 'pending_upload' ? (
+                              <button
+                                onClick={() => handleViewDocument(u.documentPath, 'Document')}
+                                className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline focus:outline-none"
+                              >
+                                <FileText className="w-3.5 h-3.5" /> View
+                              </button>
+                            ) : (
+                              <span className="text-xs opacity-40 italic" style={{ color: 'var(--text-color)' }}>No front</span>
+                            )}
+                            {u.documentBackPath ? (
+                              <button
+                                onClick={() => handleViewDocument(u.documentBackPath, 'Back Side')}
+                                className="flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline focus:outline-none"
+                              >
+                                <FileText className="w-3.5 h-3.5" /> Back
+                              </button>
+                            ) : (
+                              <span className="text-xs opacity-40 italic" style={{ color: 'var(--text-color)' }}>No back</span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* OCR Data — toggle button */}
+                        <td className="py-4 px-6">
+                          {u.ocrData ? (
+                            <button
+                              onClick={() => setExpandedOcrRow(expandedOcrRow === u._id ? null : u._id)}
+                              className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition-colors ${
+                                u.ocrData.ocrSuccess
+                                  ? 'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100'
+                                  : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'
+                              }`}
+                            >
+                              <ScanLine className="w-3.5 h-3.5" />
+                              {u.ocrData.ocrSuccess ? 'View OCR' : 'OCR Failed'}
+                              {expandedOcrRow === u._id ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                            </button>
+                          ) : (
+                            <span className="text-xs opacity-40 italic" style={{ color: 'var(--text-color)' }}>No OCR</span>
+                          )}
+                        </td>
+
+                        {/* Wallet */}
+                        <td className="py-4 px-6">
+                          <div
+                            className="flex items-center gap-2 text-xs font-mono opacity-50 px-2 py-1 rounded-md w-fit"
+                            style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-color)' }}
                           >
-                            <FileText className="w-4 h-4" />
-                            View Doc
-                          </button>
-                        ) : (
-                          <span className="text-sm opacity-50 text-gray-400 italic">No Doc</span>
-                        )}
-                      </td>
-                      <td className="py-4 px-6">
-                        <div
-                          className="flex items-center gap-2 text-xs font-mono opacity-50 px-2 py-1 rounded-md w-fit"
-                          style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-color)' }}
-                        >
-                          <Wallet className="w-3 h-3" />
-                          {u.walletAddress
-                            ? `${u.walletAddress.slice(0, 6)}...${u.walletAddress.slice(-4)}`
-                            : 'N/A'}
-                        </div>
-                      </td>
-                      <td className="py-4 px-6">
-                        <div className="flex justify-center items-center gap-3">
-                          <button
-                            onClick={() => handleApprove(u._id)}
-                            disabled={loading || !u.walletAddress}
-                            className="bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white p-2 rounded-lg transition-all shadow-md shadow-emerald-100"
-                            title="Approve & Register"
-                          >
-                            <CheckCircle className="w-5 h-5" />
-                          </button>
-                          <button
-                            onClick={() =>
-                              setDialogConfig({ isOpen: true, type: 'reject', userId: u._id, reason: '' })
-                            }
-                            disabled={loading}
-                            className="bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white p-2 rounded-lg transition-all shadow-md shadow-orange-100"
-                            title="Reject Applicant"
-                          >
-                            <XCircle className="w-5 h-5" />
-                          </button>
-                          <button
-                            onClick={() =>
-                              setDialogConfig({ isOpen: true, type: 'block', userId: u._id, reason: '' })
-                            }
-                            disabled={loading}
-                            className="bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white p-2 rounded-lg transition-all shadow-md shadow-rose-200"
-                            title="Permanently Block"
-                          >
-                            <AlertCircle className="w-5 h-5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
+                            <Wallet className="w-3 h-3" />
+                            {u.walletAddress
+                              ? `${u.walletAddress.slice(0, 6)}...${u.walletAddress.slice(-4)}`
+                              : 'N/A'}
+                          </div>
+                        </td>
+
+                        {/* Decision buttons — unchanged */}
+                        <td className="py-4 px-6">
+                          <div className="flex justify-center items-center gap-3">
+                            <button
+                              onClick={() => handleApprove(u._id)}
+                              disabled={loading || !u.walletAddress}
+                              className="bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white p-2 rounded-lg transition-all shadow-md shadow-emerald-100"
+                              title="Approve & Register"
+                            >
+                              <CheckCircle className="w-5 h-5" />
+                            </button>
+                            <button
+                              onClick={() =>
+                                setDialogConfig({ isOpen: true, type: 'reject', userId: u._id, reason: '' })
+                              }
+                              disabled={loading}
+                              className="bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white p-2 rounded-lg transition-all shadow-md shadow-orange-100"
+                              title="Reject Applicant"
+                            >
+                              <XCircle className="w-5 h-5" />
+                            </button>
+                            <button
+                              onClick={() =>
+                                setDialogConfig({ isOpen: true, type: 'block', userId: u._id, reason: '' })
+                              }
+                              disabled={loading}
+                              className="bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white p-2 rounded-lg transition-all shadow-md shadow-rose-200"
+                              title="Permanently Block"
+                            >
+                              <AlertCircle className="w-5 h-5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+
+                      {/* ── OCR Expanded Panel ───────────────────── */}
+                      {expandedOcrRow === u._id && u.ocrData && (
+                        <tr>
+                          <td colSpan={7} className="px-6 pb-5 pt-0">
+                            <div className="rounded-xl border p-4" style={{ backgroundColor: 'var(--bg-color)', borderColor: 'var(--border-color)' }}>
+                              <div className="flex items-center gap-2 mb-3">
+                                <ScanLine className="w-4 h-4 text-violet-600" />
+                                <span className="text-sm font-bold" style={{ color: 'var(--text-color)' }}>OCR Extracted Data</span>
+                                {u.ocrData.confidence != null && (
+                                  <span className="ml-auto text-xs px-2 py-0.5 rounded-full font-semibold"
+                                    style={{ backgroundColor: u.ocrData.confidence >= 70 ? '#d1fae5' : '#fef3c7', color: u.ocrData.confidence >= 70 ? '#065f46' : '#92400e' }}
+                                  >
+                                    Confidence: {u.ocrData.confidence}%
+                                  </span>
+                                )}
+                              </div>
+
+                              {u.ocrData.ocrSuccess ? (
+                                <>
+                                  {/* User-entered data for reference */}
+                                  <div className="mb-3 p-3 rounded-lg bg-blue-50 border border-blue-100">
+                                    <p className="text-[10px] font-bold text-blue-600 uppercase tracking-wider mb-2">User-Entered Details</p>
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-1 text-xs">
+                                      <div><span className="text-blue-500 font-medium">Name:</span> <span className="font-semibold text-blue-900">{u.name}</span></div>
+                                      <div><span className="text-blue-500 font-medium">ID No:</span> <span className="font-semibold text-blue-900">{u.idNumber}</span></div>
+                                      <div><span className="text-blue-500 font-medium">DOB:</span> <span className="font-semibold text-blue-900">{u.dob}</span></div>
+                                    </div>
+                                  </div>
+
+                                  {/* OCR-extracted data */}
+                                  <div className="p-3 rounded-lg bg-violet-50 border border-violet-100">
+                                    <p className="text-[10px] font-bold text-violet-600 uppercase tracking-wider mb-2">Nepali Citizenship Certificate OCR Extracted Data</p>
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-2 text-xs">
+                                      <div>
+                                        <span className="text-violet-500 font-medium">Citizenship Number:</span>{' '}
+                                        <span className="font-semibold text-violet-900">{u.ocrData.citizenshipNumber ?? 'null'}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-violet-500 font-medium">Full Name:</span>{' '}
+                                        <span className="font-semibold text-violet-900">{u.ocrData.fullName ?? 'null'}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-violet-500 font-medium">Gender:</span>{' '}
+                                        <span className="font-semibold text-violet-900">{u.ocrData.gender ?? 'null'}</span>
+                                      </div>
+
+                                      {/* Date of Birth breakdown */}
+                                      <div>
+                                        <span className="text-violet-500 font-medium">DOB Year:</span>{' '}
+                                        <span className="font-semibold text-violet-900">{typeof u.ocrData.dateOfBirth === 'object' ? (u.ocrData.dateOfBirth?.year ?? 'null') : 'null'}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-violet-500 font-medium">DOB Month:</span>{' '}
+                                        <span className="font-semibold text-violet-900">{typeof u.ocrData.dateOfBirth === 'object' ? (u.ocrData.dateOfBirth?.month ?? 'null') : 'null'}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-violet-500 font-medium">DOB Day:</span>{' '}
+                                        <span className="font-semibold text-violet-900">{typeof u.ocrData.dateOfBirth === 'object' ? (u.ocrData.dateOfBirth?.day ?? 'null') : 'null'}</span>
+                                      </div>
+
+                                      {/* Birth Location */}
+                                      <div>
+                                        <span className="text-violet-500 font-medium">Birth District:</span>{' '}
+                                        <span className="font-semibold text-violet-900">{u.ocrData.birthDistrict ?? 'null'}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-violet-500 font-medium">Birth Municipality:</span>{' '}
+                                        <span className="font-semibold text-violet-900">{u.ocrData.birthMunicipality ?? 'null'}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-violet-500 font-medium">Birth Ward No:</span>{' '}
+                                        <span className="font-semibold text-violet-900">{u.ocrData.birthWardNo ?? 'null'}</span>
+                                      </div>
+
+                                      {/* Permanent Location */}
+                                      <div>
+                                        <span className="text-violet-500 font-medium">Permanent District:</span>{' '}
+                                        <span className="font-semibold text-violet-900">{u.ocrData.permanentDistrict ?? 'null'}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-violet-500 font-medium">Permanent Municipality:</span>{' '}
+                                        <span className="font-semibold text-violet-900">{u.ocrData.permanentMunicipality ?? 'null'}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-violet-500 font-medium">Permanent Ward No:</span>{' '}
+                                        <span className="font-semibold text-violet-900">{u.ocrData.permanentWardNo ?? 'null'}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </>
+                              ) : (
+                                <div className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg p-3">
+                                  <strong>OCR failed:</strong> {u.ocrData.ocrError || 'Unknown error'}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   ))}
                 </tbody>
               </table>
@@ -823,7 +982,7 @@ const AdminDashboard = () => {
             <div className="flex items-center justify-between p-4 border-b">
               <h3 className="text-lg font-bold flex items-center gap-2 text-gray-800">
                 <FileText className="w-5 h-5 text-blue-600" />
-                Document Viewer
+                {selectedDocument.label ? `Document Viewer — ${selectedDocument.label}` : 'Document Viewer'}
               </h3>
               <div className="flex items-center gap-2">
                 <button

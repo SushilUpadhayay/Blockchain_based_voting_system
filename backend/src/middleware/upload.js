@@ -13,7 +13,7 @@ const storage = multer.diskStorage({
     cb(null, uploadDir);
   },
   filename(req, file, cb) {
-    // Make filename unique
+    // Make filename unique: fieldname-timestamp.ext
     cb(
       null,
       `${file.fieldname}-${Date.now()}${path.extname(file.originalname)}`
@@ -40,4 +40,10 @@ const upload = multer({
   },
 });
 
-module.exports = { upload };
+// For dual citizenship image upload (front + back)
+const uploadCitizenship = upload.fields([
+  { name: 'documentFront', maxCount: 1 },
+  { name: 'documentBack',  maxCount: 1 },
+]);
+
+module.exports = { upload, uploadCitizenship };

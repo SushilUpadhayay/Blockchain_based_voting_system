@@ -53,13 +53,14 @@ const nonceLimiter = rateLimit({
  * extremely slow without affecting normal users.
  */
 const registrationLimiter = rateLimit({
-  windowMs: 24 * 60 * 60 * 1000, // 24 hours
-  max: 3,
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,
+  skipFailedRequests: true, // Don't count failed requests (4xx/5xx) toward limit
   standardHeaders: true,
   legacyHeaders: false,
   handler: rateLimitHandler(
     'Too many registration attempts from this IP address. ' +
-    'Each device is limited to 3 registration requests per 24 hours.'
+    'Each device is limited to 10 registration requests per 15 minutes.'
   )
 });
 

@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const { registerVoterOnChain, startElectionOnChain, endElectionOnChain, addCandidateOnChain, isVoterAuthorizedOnChain } = require('../services/blockchainService');
+const { sendStatusNotificationEmail } = require('../services/otpService');
 
 // @desc    Get all verified users waiting for admin approval
 // @route   GET /api/admin/pending-users
@@ -52,6 +53,11 @@ const approveUser = async (req, res, next) => {
 
     await user.save();
 
+    // Send "Registration Approved" status email automatically
+    sendStatusNotificationEmail(user, 'approved').catch(err => {
+      console.error('Failed to send approval status email:', err);
+    });
+
     res.json({
       message: 'User approved and registered on blockchain',
       status: user.status,
@@ -85,6 +91,11 @@ const rejectUser = async (req, res, next) => {
     user.rejectionReason = reason;
     await user.save();
 
+    // Send "Registration Rejected" status email automatically with reason
+    sendStatusNotificationEmail(user, 'rejected', reason).catch(err => {
+      console.error('Failed to send rejection status email:', err);
+    });
+
     res.json({ message: 'User rejected successfully', status: user.status, reason });
   } catch (error) {
     next(error);
@@ -106,6 +117,11 @@ const blockUser = async (req, res, next) => {
     user.status = 'blocked';
     user.rejectionReason = 'Permanently blocked by administrator';
     await user.save();
+
+    // Send "Account Blocked" status email automatically
+    sendStatusNotificationEmail(user, 'blocked').catch(err => {
+      console.error('Failed to send blocked status email:', err);
+    });
 
     res.json({ message: 'User blocked permanently', status: user.status });
   } catch (error) {

@@ -1,21 +1,28 @@
 const User = require('../models/User');
-const { extractIdentityData } = require('../services/ocrService');
+const { extractCitizenshipData } = require('../services/ocrService');
+const { sendStatusNotificationEmail } = require('../services/otpService');
 
-// @desc    Upload ID Document & perform OCR
+// @desc    Upload citizenship front & back images, run OCR on back side
 // @route   POST /api/user/upload-document
 // @access  Private (JWT required)
 const uploadDocument = async (req, res, next) => {
   try {
-    // Use the authenticated user's ID from the JWT token — never trust the body
     const userId = req.user._id;
 
-    if (!req.file) {
+    // Validate both images are present
+    const frontFile = req.files?.documentFront?.[0];
+    const backFile  = req.files?.documentBack?.[0];
+
+    if (!frontFile) {
       res.status(400);
-      throw new Error('Please upload an image or PDF document');
+      throw new Error('Please upload the front side of your citizenship document.');
+    }
+    if (!backFile) {
+      res.status(400);
+      throw new Error('Please upload the back side of your citizenship document.');
     }
 
     const user = await User.findById(userId);
-
     if (!user) {
       res.status(404);
       throw new Error('User not found');
@@ -23,26 +30,64 @@ const uploadDocument = async (req, res, next) => {
 
     if (user.status !== 'pending') {
       res.status(400);
-      throw new Error(`Cannot upload document. Current status: ${user.status}. Only pending users can upload.`);
+      throw new Error(
+        `Cannot upload document. Current status: ${user.status}. Only pending users can upload.`
+      );
     }
 
-    // Save document path
-    user.documentPath = req.file.path;
+    // Save both file paths
+    user.documentFrontPath = frontFile.path;
+    user.documentBackPath  = backFile.path;
+    // Keep documentPath pointing to front for backward compatibility
+    user.documentPath = frontFile.path;
+
+    // Run OCR on back side (English side) 
+    const ocrResult = await extractCitizenshipData(backFile.path);
+
+    if (ocrResult.success && ocrResult.extractedData) {
+      const d = ocrResult.extractedData;
+      user.ocrData = {
+        citizenshipNumber:     d.citizenshipNumber     || null,
+        fullName:              d.fullName              || null,
+        gender:                d.gender                || null,
+        dateOfBirth: {
+          year:  d.dateOfBirth?.year  || null,
+          month: d.dateOfBirth?.month || null,
+          day:   d.dateOfBirth?.day   || null,
+        },
+        birthDistrict:         d.birthDistrict         || null,
+        birthMunicipality:     d.birthMunicipality     || null,
+        birthWardNo:           d.birthWardNo           || null,
+        permanentDistrict:     d.permanentDistrict     || null,
+        permanentMunicipality: d.permanentMunicipality || null,
+        permanentWardNo:       d.permanentWardNo       || null,
+        confidence:            d.confidence            ?? null,
+        rawText:               d.rawText               || null,
+        extractedAt:           d.extractedAt ? new Date(d.extractedAt) : new Date(),
+        ocrSuccess:            true,
+        ocrError:              null,
+      };
+    } else {
+      // OCR failed — store the error, don't block the upload
+      user.ocrData = {
+        ocrSuccess: false,
+        ocrError:   ocrResult.error || 'OCR processing failed',
+        extractedAt: new Date(),
+      };
+    }
+
     await user.save();
 
-    // Call Mock OCR
-    const ocrResult = await extractIdentityData(user.documentPath);
+    // Send "Registration Submitted" status email automatically
+    sendStatusNotificationEmail(user, 'pending').catch(err => {
+      console.error('Failed to send pending status notification email:', err);
+    });
 
-    if (ocrResult.success && ocrResult.extractedData.isMatch) {
-      // Status stays 'pending': user completed upload, waiting for admin approval
-      res.json({
-        message: 'Document uploaded and passed initial OCR check. Waiting for admin approval.',
-        status: user.status,
-      });
-    } else {
-      res.status(400);
-      throw new Error('OCR verification failed. The information on your document does not match your registration data.');
-    }
+    res.json({
+      message: 'Citizenship documents uploaded successfully. Your application is under review.',
+      status:  user.status,
+      ocrSuccess: user.ocrData.ocrSuccess,
+    });
   } catch (error) {
     next(error);
   }
@@ -69,13 +114,13 @@ const getProfile = async (req, res, next) => {
 
     if (user) {
       res.json({
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        idNumber: user.idNumber,
-        status: user.status,
+        _id:           user._id,
+        name:          user.name,
+        email:         user.email,
+        idNumber:      user.idNumber,
+        status:        user.status,
         walletAddress: user.walletAddress,
-        role: user.role,
+        role:          user.role,
       });
     } else {
       res.status(404);

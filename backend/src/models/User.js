@@ -37,6 +37,33 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: 'pending_upload',
     },
+    documentFrontPath: {
+      type: String,
+    },
+    documentBackPath: {
+      type: String,
+    },
+    ocrData: {
+      citizenshipNumber:     { type: String, default: null },
+      fullName:              { type: String, default: null },
+      gender:                { type: String, default: null },
+      dateOfBirth: {
+        year:  { type: String, default: null },
+        month: { type: String, default: null },
+        day:   { type: String, default: null },
+      },
+      birthDistrict:         { type: String, default: null },
+      birthMunicipality:     { type: String, default: null },
+      birthWardNo:           { type: String, default: null },
+      permanentDistrict:     { type: String, default: null },
+      permanentMunicipality: { type: String, default: null },
+      permanentWardNo:       { type: String, default: null },
+      confidence:            { type: Number, default: null },
+      rawText:               { type: String, default: null },
+      extractedAt:           { type: Date, default: Date.now },
+      ocrSuccess:            { type: Boolean, default: false },
+      ocrError:              { type: String, default: null },
+    },
     status: {
       type: String,
       enum: ['pending', 'registered', 'rejected', 'blocked'],

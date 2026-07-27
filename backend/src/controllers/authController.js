@@ -45,16 +45,20 @@ const registerInit = async (req, res, next) => {
     // 1. Verify cryptographic proof of wallet ownership
     await verifySignature(walletAddress, signature, message);
 
-    // 2. Check if this wallet address is already claimed by ANY existing account.
-    //    This prevents a user from bypassing checks by registering with a new
-    //    email / ID number while reusing the same wallet.
+    // 2. Check if this wallet address is already claimed by another active/registered account.
     const walletOwner = await User.findOne({ walletAddress });
-    if (walletOwner) {
-      res.status(409);
-      throw new Error(
-        'This wallet address is already linked to an existing account. ' +
-        'Each wallet can only be associated with one identity.'
-      );
+    if (walletOwner && walletOwner.email.toLowerCase() !== email.toLowerCase()) {
+      if (walletOwner.status === 'registered') {
+        res.status(409);
+        throw new Error(
+          'This wallet address is already linked to an existing account. ' +
+          'Each wallet can only be associated with one identity.'
+        );
+      }
+      if (walletOwner.status === 'blocked') {
+        res.status(403);
+        throw new Error('Your account has been blocked by the election administrator.');
+      }
     }
 
     // 3. Proceed with checking if email/ID already exists
@@ -72,8 +76,9 @@ const registerInit = async (req, res, next) => {
       }
       if (user.status === 'blocked') {
         res.status(403);
-        throw new Error('This account has been permanently blocked.');
+        throw new Error('Your account has been blocked by the election administrator.');
       }
+      // Note: If user.status === 'rejected', re-registration is allowed and old record will be replaced.
     }
 
     // 3. Enforce 60-second OTP resend cooldown
@@ -101,10 +106,15 @@ const registerInit = async (req, res, next) => {
       expiresAt: new Date(Date.now() + 5 * 60 * 1000), // 5 minutes expiration
     });
 
-    // Send raw OTP asynchronously via email
-    sendOTP({ email, name }, otp, 'registration').catch(err => {
-      console.error('Failed to send registration OTP in background:', err);
-    });
+    // Send raw OTP via email
+    try {
+      await sendOTP({ email, name }, otp, 'registration');
+    } catch (err) {
+      console.error('Failed to send registration OTP:', err);
+      await Otp.deleteOne({ email: email.toLowerCase(), purpose: 'registration' });
+      res.status(500);
+      throw new Error('Failed to send OTP email. Please verify your email address and try again.');
+    }
 
     res.status(200).json({
       message: 'OTP sent to your email. Please verify to complete registration.',
@@ -165,8 +175,14 @@ const verifyRegisterOtp = async (req, res, next) => {
       throw new Error(`Invalid OTP. ${5 - record.attempts} attempts remaining.`);
     }
 
-    // OTP is valid. Check DB one last time to prevent race conditions
+    // OTP is valid. Handle Rejected Registration Workflow:
+    // If a previous registration was rejected, delete the old record and create a completely new one.
     let user = await User.findOne({ email: email.toLowerCase() });
+
+    if (user && user.status === 'rejected') {
+      await User.deleteOne({ _id: user._id });
+      user = null;
+    }
 
     if (user) {
       user.name = record.userData.name;
@@ -174,10 +190,8 @@ const verifyRegisterOtp = async (req, res, next) => {
       user.dob = record.userData.dob;
       user.address = record.userData.address;
       user.walletAddress = record.userData.walletAddress;
-      if (user.status === 'rejected') {
-        user.status = 'pending';
-        user.rejectionReason = undefined;
-      }
+      user.status = 'pending';
+      user.rejectionReason = undefined;
       await user.save();
     } else {
       user = await User.create({
@@ -230,19 +244,26 @@ const loginUser = async (req, res, next) => {
       throw new Error('User not registered. Please complete registration first.');
     }
 
+    // Enforce Login Status Restrictions
     if (user.status === 'blocked') {
       res.status(403);
-      throw new Error('Account blocked');
+      throw new Error('Your account has been blocked by the election administrator.');
     }
 
-    // Voter checks: Ensure login is ONLY allowed if:
-    // - registration completed & approved by admin (status is 'registered')
-    // - wallet linked
-    // - blockchain authorization completed
     if (user.role === 'user') {
+      if (user.status === 'pending') {
+        res.status(403);
+        throw new Error('Your registration is still under review.');
+      }
+
+      if (user.status === 'rejected') {
+        res.status(403);
+        throw new Error('Your registration has been rejected. Please complete a new registration using the election registration link.');
+      }
+
       if (user.status !== 'registered') {
         res.status(403);
-        throw new Error('Registration pending approval');
+        throw new Error('Your registration is still under review.');
       }
 
       if (!user.walletAddress) {
@@ -290,10 +311,15 @@ const loginUser = async (req, res, next) => {
       expiresAt: new Date(Date.now() + 5 * 60 * 1000),
     });
 
-    // Send raw OTP asynchronously
-    sendOTP(user, otp, 'login').catch(err => {
-      console.error('Failed to send login OTP in background:', err);
-    });
+    // Send raw OTP via email
+    try {
+      await sendOTP(user, otp, 'login');
+    } catch (err) {
+      console.error('Failed to send login OTP:', err);
+      await Otp.deleteOne({ email: email.toLowerCase(), purpose: 'login' });
+      res.status(500);
+      throw new Error('Failed to send login OTP email. Please try again later.');
+    }
 
     let requireSignature = false;
     let walletAddress = null;
@@ -338,19 +364,26 @@ const verifyOtp = async (req, res, next) => {
       throw new Error('User not registered. Please complete registration first.');
     }
 
+    // Enforce Login Status Restrictions
     if (user.status === 'blocked') {
       res.status(403);
-      throw new Error('Account blocked');
+      throw new Error('Your account has been blocked by the election administrator.');
     }
 
-    // Voter checks: Ensure login is ONLY allowed if:
-    // - registration completed & approved by admin (status is 'registered')
-    // - wallet linked
-    // - blockchain authorization completed
     if (user.role === 'user') {
+      if (user.status === 'pending') {
+        res.status(403);
+        throw new Error('Your registration is still under review.');
+      }
+
+      if (user.status === 'rejected') {
+        res.status(403);
+        throw new Error('Your registration has been rejected. Please complete a new registration using the election registration link.');
+      }
+
       if (user.status !== 'registered') {
         res.status(403);
-        throw new Error('Registration pending approval');
+        throw new Error('Your registration is still under review.');
       }
 
       if (!user.walletAddress) {
@@ -467,9 +500,14 @@ const requestVoteOTP = async (req, res, next) => {
       expiresAt: new Date(Date.now() + 5 * 60 * 1000),
     });
 
-    sendOTP(user, otp, 'voting').catch(err => {
-      console.error('Failed to send voting OTP in background:', err);
-    });
+    try {
+      await sendOTP(user, otp, 'voting');
+    } catch (err) {
+      console.error('Failed to send voting OTP:', err);
+      await Otp.deleteOne({ email: user.email.toLowerCase(), purpose: 'voting' });
+      res.status(500);
+      throw new Error('Failed to send voting OTP email. Please try again.');
+    }
 
     res.json({
       message: 'Voting OTP sent to your registered email',

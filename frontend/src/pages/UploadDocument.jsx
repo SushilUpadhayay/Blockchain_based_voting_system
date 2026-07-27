@@ -1,46 +1,131 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import API from '../api/api';
-import { useAuth } from '../context/AuthContext';
-import { CheckCircle2, UploadCloud, AlertCircle } from 'lucide-react';
+import { CheckCircle2, UploadCloud, AlertCircle, Eye, X } from 'lucide-react';
 
 const MAX_FILE_SIZE_MB = 5;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+const ACCEPTED = '.jpg,.jpeg,.png';
 
+/* tiny preview helper */
+const ImagePreview = ({ file, onRemove }) => {
+  if (!file) return null;
+  const url = URL.createObjectURL(file);
+  return (
+    <div className="relative mt-2 rounded-lg overflow-hidden border"
+         style={{ borderColor: 'var(--border-color)' }}>
+      <img src={url} alt="preview" className="w-full max-h-40 object-cover" />
+      <button
+        type="button"
+        onClick={onRemove}
+        className="absolute top-1 right-1 bg-black/50 text-white rounded-full p-0.5 hover:bg-red-600 transition-colors"
+        title="Remove"
+      >
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  );
+};
+
+/* drop-zone card */
+const DropZone = ({ label, sublabel, file, onChange, onRemove, error, fieldId }) => (
+  <div className="space-y-1">
+    <p className="text-sm font-semibold" style={{ color: 'var(--text-color)' }}>{label}</p>
+    {sublabel && (
+      <p className="text-xs opacity-60 mb-1" style={{ color: 'var(--text-color)' }}>{sublabel}</p>
+    )}
+    <div
+      className="flex flex-col items-center justify-center border-2 border-dashed rounded-xl p-5 cursor-pointer relative transition-colors"
+      style={{
+        backgroundColor: 'var(--bg-color)',
+        borderColor: error ? '#ef4444' : file ? '#3b82f6' : 'var(--border-color)',
+      }}
+    >
+      <input
+        id={fieldId}
+        type="file"
+        accept={ACCEPTED}
+        onChange={onChange}
+        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+      />
+      {file ? (
+        <div className="flex items-center gap-2">
+          <Eye className="w-5 h-5 text-blue-500" />
+          <span className="text-sm font-medium text-blue-600 truncate max-w-[200px]">{file.name}</span>
+          <span className="text-xs opacity-50" style={{ color: 'var(--text-color)' }}>
+            ({(file.size / 1024 / 1024).toFixed(2)} MB)
+          </span>
+        </div>
+      ) : (
+        <>
+          <UploadCloud className="w-8 h-8 mb-2 opacity-40" style={{ color: 'var(--text-color)' }} />
+          <span className="text-sm font-medium opacity-60 text-center" style={{ color: 'var(--text-color)' }}>
+            Click or drag to upload
+          </span>
+          <span className="text-xs opacity-40 mt-0.5" style={{ color: 'var(--text-color)' }}>
+            JPG / PNG — max {MAX_FILE_SIZE_MB} MB
+          </span>
+        </>
+      )}
+    </div>
+
+    {error && (
+      <div className="flex items-center gap-1.5 text-xs text-red-500 mt-1">
+        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+        {error}
+      </div>
+    )}
+
+    <ImagePreview file={file} onRemove={onRemove} />
+  </div>
+);
+
+/* main component */
 const UploadDocument = () => {
-  const navigate = useNavigate();
-  const { user } = useAuth();
-  const [file, setFile] = useState(null);
-  const [fileError, setFileError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const navigate  = useNavigate();
+  const [frontFile, setFrontFile] = useState(null);
+  const [backFile,  setBackFile]  = useState(null);
+  const [frontError, setFrontError] = useState('');
+  const [backError,  setBackError]  = useState('');
+  const [loading,    setLoading]    = useState(false);
   const [isUploaded, setIsUploaded] = useState(false);
 
-  const handleFileChange = (e) => {
-    const selected = e.target.files?.[0];
-    if (!selected) return;
+  const validateFile = (file) => {
+    if (!file) return 'Please select a file.';
+    if (file.size > MAX_FILE_SIZE_BYTES) return `File too large. Maximum size is ${MAX_FILE_SIZE_MB} MB.`;
+    return '';
+  };
 
-    setFileError('');
-    if (selected.size > MAX_FILE_SIZE_BYTES) {
-      setFileError(`File is too large. Maximum allowed size is ${MAX_FILE_SIZE_MB} MB.`);
-      setFile(null);
-      return;
-    }
-    setFile(selected);
+  const handleFrontChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const err = validateFile(file);
+    setFrontError(err);
+    setFrontFile(err ? null : file);
+  };
+
+  const handleBackChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const err = validateFile(file);
+    setBackError(err);
+    setBackFile(err ? null : file);
   };
 
   const handleUpload = async (e) => {
     e.preventDefault();
 
-    if (!file) {
-      toast.error('Please select a document to upload.');
-      return;
-    }
+    // Final validation
+    const fe = validateFile(frontFile);
+    const be = validateFile(backFile);
+    setFrontError(fe);
+    setBackError(be);
+    if (fe || be) return;
 
     const formData = new FormData();
-    formData.append('document', file);
-    // Note: userId is no longer sent in the body.
-    // The backend reads the user identity from the JWT token (req.user._id).
+    formData.append('documentFront', frontFile);
+    formData.append('documentBack',  backFile);
 
     setLoading(true);
     try {
@@ -48,7 +133,7 @@ const UploadDocument = () => {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       setIsUploaded(true);
-      toast.success('Document uploaded successfully!');
+      toast.success('Documents uploaded successfully!');
     } catch (error) {
       console.error('Upload Error:', error);
       toast.error(error.response?.data?.message || 'Document upload failed.');
@@ -57,24 +142,33 @@ const UploadDocument = () => {
     }
   };
 
+  /* success screen  */
   if (isUploaded) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-6 transition-colors duration-300" style={{ backgroundColor: 'var(--bg-color)' }}>
-        <div className="max-w-md w-full p-8 rounded-xl shadow-md border transition-colors duration-300 text-center" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
+      <div
+        className="min-h-screen flex items-center justify-center p-6 transition-colors duration-300"
+        style={{ backgroundColor: 'var(--bg-color)' }}
+      >
+        <div
+          className="max-w-md w-full p-8 rounded-2xl shadow-md border text-center transition-colors duration-300"
+          style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}
+        >
           <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <CheckCircle2 className="w-8 h-8 text-blue-600" />
           </div>
-          <h2 className="text-2xl font-bold mb-2" style={{ color: 'var(--text-color)' }}>Waiting for Approval</h2>
+          <h2 className="text-2xl font-bold mb-2" style={{ color: 'var(--text-color)' }}>
+            Waiting for Approval
+          </h2>
           <p className="mb-6 opacity-70 text-sm" style={{ color: 'var(--text-color)' }}>
-            Your document has been uploaded securely. An admin will review it shortly.
-            You will be able to vote once your account is approved.
+            Your citizenship documents have been uploaded securely. An admin will review them
+            shortly. You will be able to vote once your account is approved.
           </p>
           <p className="text-sm opacity-50 mb-6" style={{ color: 'var(--text-color)' }}>
             Please check back later or wait for a notification.
           </p>
           <button
             onClick={() => navigate('/dashboard')}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg transition-colors"
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-xl transition-colors"
           >
             Go to Dashboard
           </button>
@@ -83,49 +177,74 @@ const UploadDocument = () => {
     );
   }
 
+  /* upload form  */
   return (
-    <div className="min-h-screen flex items-center justify-center p-6 transition-colors duration-300" style={{ backgroundColor: 'var(--bg-color)' }}>
-      <div className="max-w-md w-full p-8 rounded-xl shadow-md border transition-colors duration-300" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
-        <h2 className="text-2xl font-bold mb-2 text-center" style={{ color: 'var(--text-color)' }}>Upload ID Document</h2>
-        <p className="mb-6 text-center text-sm opacity-70" style={{ color: 'var(--text-color)' }}>
-          We need to verify your identity before you can participate in the election.
-          Accepted formats: JPG, PNG, PDF — max {MAX_FILE_SIZE_MB} MB.
+    <div
+      className="min-h-screen flex items-center justify-center p-6 transition-colors duration-300"
+      style={{ backgroundColor: 'var(--bg-color)' }}
+    >
+      <div
+        className="max-w-xl w-full p-8 rounded-2xl shadow-md border transition-colors duration-300"
+        style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}
+      >
+        <h2 className="text-2xl font-bold mb-1 text-center" style={{ color: 'var(--text-color)' }}>
+          Upload Citizenship Document
+        </h2>
+        <p className="mb-6 text-center text-sm opacity-60" style={{ color: 'var(--text-color)' }}>
+          Upload <strong>both sides</strong> of your Nepali citizenship card to verify your identity.
         </p>
+
         <form onSubmit={handleUpload} className="space-y-6">
-          <div
-            className="flex flex-col items-center justify-center border-2 border-dashed rounded-lg p-6 cursor-pointer transition-colors relative"
-            style={{ backgroundColor: 'var(--bg-color)', borderColor: fileError ? '#ef4444' : 'var(--border-color)' }}
-          >
-            <input
-              type="file"
-              onChange={handleFileChange}
-              accept=".jpg,.jpeg,.png,.pdf"
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-            />
-            <UploadCloud className="w-10 h-10 mb-2 opacity-50" style={{ color: 'var(--text-color)' }} />
-            <span className="text-sm font-medium text-center" style={{ color: 'var(--text-color)' }}>
-              {file ? file.name : 'Click or drag to upload document'}
-            </span>
-            {file && (
-              <span className="text-xs mt-1 opacity-50" style={{ color: 'var(--text-color)' }}>
-                {(file.size / 1024 / 1024).toFixed(2)} MB
+          {/* Front side */}
+          <DropZone
+            label="Front Side (Nepali side)"
+            sublabel="The side with your photo and Nepali text"
+            file={frontFile}
+            onChange={handleFrontChange}
+            onRemove={() => { setFrontFile(null); setFrontError(''); }}
+            error={frontError}
+            fieldId="docFront"
+          />
+
+          {/* Divider */}
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t" style={{ borderColor: 'var(--border-color)' }} />
+            </div>
+            <div className="relative flex justify-center">
+              <span
+                className="px-3 text-xs font-semibold uppercase tracking-wider opacity-40"
+                style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-color)' }}
+              >
+                and
               </span>
-            )}
+            </div>
           </div>
 
-          {fileError && (
-            <div className="flex items-center gap-2 text-sm text-red-600">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              {fileError}
-            </div>
-          )}
+          {/* Back side */}
+          <DropZone
+            label="Back Side (English side)"
+            sublabel="The side with your name, citizenship number, and date of birth in English"
+            file={backFile}
+            onChange={handleBackChange}
+            onRemove={() => { setBackFile(null); setBackError(''); }}
+            error={backError}
+            fieldId="docBack"
+          />
 
           <button
             type="submit"
-            disabled={loading || !file || !!fileError}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium py-2.5 rounded-lg transition-colors flex justify-center items-center"
+            disabled={loading || !frontFile || !backFile || !!frontError || !!backError}
+            className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium py-3 rounded-xl transition-colors flex justify-center items-center gap-2"
           >
-            {loading ? <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Submit Document'}
+            {loading ? (
+              <>
+                <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                Processing…
+              </>
+            ) : (
+              'Submit Documents'
+            )}
           </button>
         </form>
       </div>
