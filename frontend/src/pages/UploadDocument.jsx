@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import API from '../api/api';
+import { useAuth } from '../context/AuthContext';
+import { ROUTES } from '../constants';
 import { CheckCircle2, UploadCloud, AlertCircle, Eye, X } from 'lucide-react';
 
 const MAX_FILE_SIZE_MB = 5;
@@ -69,14 +71,12 @@ const DropZone = ({ label, sublabel, file, onChange, onRemove, error, fieldId })
         </>
       )}
     </div>
-
     {error && (
       <div className="flex items-center gap-1.5 text-xs text-red-500 mt-1">
         <AlertCircle className="w-3.5 h-3.5 shrink-0" />
         {error}
       </div>
     )}
-
     <ImagePreview file={file} onRemove={onRemove} />
   </div>
 );
@@ -84,12 +84,12 @@ const DropZone = ({ label, sublabel, file, onChange, onRemove, error, fieldId })
 /* main component */
 const UploadDocument = () => {
   const navigate  = useNavigate();
+  const { refreshUser } = useAuth();
   const [frontFile, setFrontFile] = useState(null);
   const [backFile,  setBackFile]  = useState(null);
   const [frontError, setFrontError] = useState('');
   const [backError,  setBackError]  = useState('');
   const [loading,    setLoading]    = useState(false);
-  const [isUploaded, setIsUploaded] = useState(false);
 
   const validateFile = (file) => {
     if (!file) return 'Please select a file.';
@@ -132,8 +132,9 @@ const UploadDocument = () => {
       await API.post('/user/upload-document', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      setIsUploaded(true);
       toast.success('Documents uploaded successfully!');
+      await refreshUser();
+      navigate(ROUTES.DASHBOARD);
     } catch (error) {
       console.error('Upload Error:', error);
       toast.error(error.response?.data?.message || 'Document upload failed.');
@@ -141,41 +142,6 @@ const UploadDocument = () => {
       setLoading(false);
     }
   };
-
-  /* success screen  */
-  if (isUploaded) {
-    return (
-      <div
-        className="min-h-screen flex items-center justify-center p-6 transition-colors duration-300"
-        style={{ backgroundColor: 'var(--bg-color)' }}
-      >
-        <div
-          className="max-w-md w-full p-8 rounded-2xl shadow-md border text-center transition-colors duration-300"
-          style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}
-        >
-          <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <CheckCircle2 className="w-8 h-8 text-blue-600" />
-          </div>
-          <h2 className="text-2xl font-bold mb-2" style={{ color: 'var(--text-color)' }}>
-            Waiting for Approval
-          </h2>
-          <p className="mb-6 opacity-70 text-sm" style={{ color: 'var(--text-color)' }}>
-            Your citizenship documents have been uploaded securely. An admin will review them
-            shortly. You will be able to vote once your account is approved.
-          </p>
-          <p className="text-sm opacity-50 mb-6" style={{ color: 'var(--text-color)' }}>
-            Please check back later or wait for a notification.
-          </p>
-          <button
-            onClick={() => navigate('/dashboard')}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-xl transition-colors"
-          >
-            Go to Dashboard
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   /* upload form  */
   return (

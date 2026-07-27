@@ -66,7 +66,7 @@ function parseNepaliCitizenshipText(rawText) {
 
   // 2. Full Name
   const fullName = extractPattern(text, [
-    /(?:Full\s*Name|Name\s*of\s*Holder|Name)\s*[:\-\.\|]?\s*([A-Za-z\s]{3,60})/i,
+    /(?:Full\s*Name|Name\s*of\s*Holder|Name)\.?\s*[:\-\.\|]?\s*([A-Za-z \-\.]{3,60})(?=\n|$|Date)/i,
   ]);
 
   // 3. Gender
@@ -82,7 +82,7 @@ function parseNepaliCitizenshipText(rawText) {
   // 4. Date of Birth (Year, Month, Day)
   let dateOfBirth = { year: null, month: null, day: null };
   const rawDob = extractPattern(text, [
-    /(?:Date\s*of\s*Birth|DOB|Birth\s*Date)\s*[:\-\.\|]?\s*([0-9A-Za-z\s\-\/\.\,]{5,35})/i,
+    /(?:Date\s*of\s*Birth|DOB|Birth\s*Date)\s*\(?AD\)?\s*[:\-\.\|]?\s*([^\n]{5,40})/i,
   ]);
 
   if (rawDob) {
@@ -116,6 +116,15 @@ function parseNepaliCitizenshipText(rawText) {
         };
       }
     }
+  } else {
+      const yr = text.match(/Year\s*[:\-\.\|]?\s*([0-9]{4})/i);
+      const mo = text.match(/Month\s*[:\-\.\|]?\s*([0-9]{1,2}|[A-Za-z]{3,9})/i);
+      const dy = text.match(/Day\s*[:\-\.\|]?\s*([0-9]{1,2})/i);
+      dateOfBirth = {
+        year: yr ? yr[1] : null,
+        month: mo ? mo[1] : null,
+        day: dy ? dy[1] : null,
+      };
   }
 
   // 5. Birth Place (District, Municipality, Ward No.)
@@ -123,10 +132,10 @@ function parseNepaliCitizenshipText(rawText) {
   const birthText = birthSectionMatch ? birthSectionMatch[0] : text;
 
   const birthDistrict = extractPattern(birthText, [
-    /District\s*[:\-\.\|]?\s*([A-Za-z\s]{3,30})/i,
+    /District\s*[:\-\.\|]?\s*([A-Za-z ]{3,30})(?=\n|$|Municipality)/i,
   ]);
   const birthMunicipality = extractPattern(birthText, [
-    /(?:Municipality|R\.?\s*Municipality|Nagarpalika|Gaunpalika|Sub\-?Metropolitan|Metropolitan|VDC)\s*[:\-\.\|]?\s*([A-Za-z0-9\s]{3,40})/i,
+    /(?:Municipality|R\.?\s*Municipality|Nagarpalika|Gaunpalika|Sub\-?Metropolitan|Metropolitan|VDC)\s*[:\-\.\|]?\s*([A-Za-z0-9 \-\.]+?)(?=\s*Ward|\n|$)/i,
   ]);
   const birthWardNo = extractPattern(birthText, [
     /Ward\s*(?:No|Num|#|No\.)?\s*[:\-\.\|]?\s*([0-9A-Za-z]{1,5})/i,
@@ -137,10 +146,10 @@ function parseNepaliCitizenshipText(rawText) {
   const permText = permSectionMatch ? permSectionMatch[0] : text;
 
   let permanentDistrict = extractPattern(permText, [
-    /District\s*[:\-\.\|]?\s*([A-Za-z\s]{3,30})/i,
+    /District\s*[:\-\.\|]?\s*([A-Za-z ]{3,30})(?=\n|$|Municipality)/i,
   ]);
   let permanentMunicipality = extractPattern(permText, [
-    /(?:Municipality|R\.?\s*Municipality|Nagarpalika|Gaunpalika|Sub\-?Metropolitan|Metropolitan|VDC)\s*[:\-\.\|]?\s*([A-Za-z0-9\s]{3,40})/i,
+    /(?:Municipality|R\.?\s*Municipality|Nagarpalika|Gaunpalika|Sub\-?Metropolitan|Metropolitan|VDC)\s*[:\-\.\|]?\s*([A-Za-z0-9 \-\.]+?)(?=\s*Ward|\n|$)/i,
   ]);
   let permanentWardNo = extractPattern(permText, [
     /Ward\s*(?:No|Num|#|No\.)?\s*[:\-\.\|]?\s*([0-9A-Za-z]{1,5})/i,

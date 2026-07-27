@@ -1,23 +1,26 @@
 import React from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { Activity, Sun, Moon } from 'lucide-react';
 import LogoutButton from './LogoutButton';
+import { ROUTES, getDashboardConfig } from '../constants';
+
+const AUTH_PAGES = [ROUTES.LOGIN, ROUTES.REGISTER, ROUTES.UPLOAD, ROUTES.VERIFY_OTP];
 
 const Navbar = () => {
   const { isAuthenticated, user } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const location = useLocation();
-  const navigate = useNavigate();
 
-  const isAuthPage = ['/login', '/register', '/upload', '/verify-otp'].includes(location.pathname);
+  const isAuthPage = AUTH_PAGES.includes(location.pathname);
+  const dashConfig = getDashboardConfig(user);
 
   return (
     <nav className="border-b px-6 py-4 flex justify-between items-center sticky top-0 z-10 shadow-sm transition-colors duration-300" 
          style={{ backgroundColor: 'var(--nav-bg)', borderColor: 'var(--border-color)' }}>
       <div className="flex items-center gap-2">
-        <Link to="/" className="flex items-center gap-2">
+        <Link to={ROUTES.HOME} className="flex items-center gap-2">
           <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
             <Activity className="text-white w-5 h-5" />
           </div>
@@ -37,17 +40,9 @@ const Navbar = () => {
 
         {isAuthenticated ? (
           <>
-            {!isAuthPage && user?.role === "admin" && (
-              <button 
-                onClick={() => navigate("/admin")}
-                className="text-sm font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100 hover:bg-blue-100 transition-all"
-              >
-                ADMIN PANEL
-              </button>
-            )}
-            {!isAuthPage && user?.role !== "admin" && (
-              <Link to="/dashboard" className="text-sm font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100 hover:bg-emerald-100 transition-all">
-                VOTING DASHBOARD
+            {!isAuthPage && (
+              <Link to={dashConfig.to} className={dashConfig.className}>
+                {dashConfig.label}
               </Link>
             )}
             <LogoutButton variant="full" />
@@ -55,11 +50,11 @@ const Navbar = () => {
         ) : (
           !isAuthPage && (
             <>
-              <Link to="/login" className="text-sm font-medium hover:text-blue-600 transition-colors" style={{ color: 'var(--text-color)' }}>
+              <Link to={ROUTES.LOGIN} className="text-sm font-medium hover:text-blue-600 transition-colors" style={{ color: 'var(--text-color)' }}>
                 Login
               </Link>
               <Link 
-                to="/register" 
+                to={ROUTES.REGISTER} 
                 className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
               >
                 Register

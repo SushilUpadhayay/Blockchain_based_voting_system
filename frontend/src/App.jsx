@@ -9,15 +9,16 @@ import Register from './pages/Register';
 import UploadDocument from './pages/UploadDocument';
 import Login from './pages/Login';
 import VerifyOtp from './pages/VerifyOtp';
-import Dashboard from './pages/Dashboard';
+import StatusDashboard from './pages/Dashboard';
+import Voting from './pages/Voting';
 import AdminDashboard from './pages/AdminDashboard';
 import Home from './pages/Home';
 import ProtectedRoute from './components/ProtectedRoute';
 import AdminRoute from './components/AdminRoute';
+import { ROUTES } from './constants';
 
 function AppContent() {
   const location = useLocation();
-
 
   return (
     <div className="flex flex-col min-h-screen transition-colors duration-300" style={{ backgroundColor: 'var(--bg-color)' }}>
@@ -27,30 +28,39 @@ function AppContent() {
           <ThemeToggle />
         </div>
         <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/register" element={<Register />} />
+          <Route path={ROUTES.HOME} element={<Home />} />
+          <Route path={ROUTES.REGISTER} element={<Register />} />
           <Route
-            path="/upload"
+            path={ROUTES.UPLOAD}
             element={
               <ProtectedRoute uploadOnly>
                 <UploadDocument />
               </ProtectedRoute>
             }
           />
-          <Route path="/login" element={<Login />} />
-          <Route path="/verify-otp" element={<VerifyOtp />} />
+          <Route path={ROUTES.LOGIN} element={<Login />} />
+          <Route path={ROUTES.VERIFY_OTP} element={<VerifyOtp />} />
           
           <Route 
-            path="/dashboard" 
+            path={ROUTES.DASHBOARD} 
             element={
               <ProtectedRoute>
-                <Dashboard />
+                <StatusDashboard />
+              </ProtectedRoute>
+            } 
+          />
+
+          <Route 
+            path={ROUTES.VOTING} 
+            element={
+              <ProtectedRoute registeredOnly>
+                <Voting />
               </ProtectedRoute>
             } 
           />
           
           <Route 
-            path="/admin" 
+            path={ROUTES.ADMIN} 
             element={
               <AdminRoute>
                 <AdminDashboard />
@@ -59,7 +69,7 @@ function AppContent() {
           />
 
           {/* Catch-all route to handle invalid URLs */}
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<Navigate to={ROUTES.HOME} replace />} />
         </Routes>
       </div>
     </div>

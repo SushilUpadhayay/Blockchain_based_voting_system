@@ -1,15 +1,16 @@
 import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { ROUTES, USER_STATUS } from '../constants';
 
 /**
  * ProtectedRoute — wraps routes that require authentication.
  *
  * Props:
- *   adminOnly   — if true, also requires user.role === 'admin'
- *   uploadOnly  — if true, also requires user.status === 'pending' (doc upload step)
+ *   uploadOnly     — if true, restricts access to pending upload step
+ *   registeredOnly — if true, restricts access to fully registered users
  */
-const ProtectedRoute = ({ children, uploadOnly = false }) => {
+const ProtectedRoute = ({ children, uploadOnly = false, registeredOnly = false }) => {
   const { user, isAuthenticated, loading } = useAuth();
 
   if (loading) {
@@ -22,18 +23,22 @@ const ProtectedRoute = ({ children, uploadOnly = false }) => {
 
   // Must have a valid JWT token
   if (!isAuthenticated || !user) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to={ROUTES.LOGIN} replace />;
   }
 
   // Must be OTP verified
   if (!user.isVerified) {
-    return <Navigate to="/verify-otp" replace />;
+    return <Navigate to={ROUTES.VERIFY_OTP} replace />;
   }
 
-  // Upload route guard — only pending users who haven't uploaded yet should be here.
-  // Registered / rejected users should not revisit /upload.
-  if (uploadOnly && user.status !== 'pending') {
-    return <Navigate to="/dashboard" replace />;
+  // Upload route guard — only pending users should be here.
+  if (uploadOnly && user.status !== USER_STATUS.PENDING) {
+    return <Navigate to={ROUTES.DASHBOARD} replace />;
+  }
+
+  // Registered route guard - only fully registered users can access (e.g. /voting)
+  if (registeredOnly && user.status !== USER_STATUS.REGISTERED) {
+    return <Navigate to={ROUTES.DASHBOARD} replace />;
   }
 
   return children;

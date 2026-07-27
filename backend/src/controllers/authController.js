@@ -84,11 +84,18 @@ const registerInit = async (req, res, next) => {
     // 3. Enforce 60-second OTP resend cooldown
     const existingOtp = await Otp.findOne({ email: email.toLowerCase(), purpose: 'registration' });
     if (existingOtp) {
-      const elapsedSeconds = Math.floor((Date.now() - existingOtp.createdAt.getTime()) / 1000);
-      if (elapsedSeconds < 60) {
+      const createdAtTime = existingOtp.createdAt
+        ? new Date(existingOtp.createdAt).getTime()
+        : Date.now();
+      const elapsedSeconds = Math.floor((Date.now() - createdAtTime) / 1000);
+
+      if (elapsedSeconds >= 0 && elapsedSeconds < 60) {
         const remainingSeconds = 60 - elapsedSeconds;
         res.status(429);
-        throw new Error(`Please wait ${remainingSeconds} seconds before requesting a new OTP.`);
+        return res.json({
+          message: `Please wait ${remainingSeconds} seconds before requesting a new OTP.`,
+          remainingSeconds
+        });
       }
       // Clean up previous OTP if cooldown expired
       await Otp.deleteOne({ _id: existingOtp._id });
@@ -251,19 +258,9 @@ const loginUser = async (req, res, next) => {
     }
 
     if (user.role === 'user') {
-      if (user.status === 'pending') {
+      if (user.status === 'blocked') {
         res.status(403);
-        throw new Error('Your registration is still under review.');
-      }
-
-      if (user.status === 'rejected') {
-        res.status(403);
-        throw new Error('Your registration has been rejected. Please complete a new registration using the election registration link.');
-      }
-
-      if (user.status !== 'registered') {
-        res.status(403);
-        throw new Error('Your registration is still under review.');
+        throw new Error('Your account has been blocked by the election administrator.');
       }
 
       if (!user.walletAddress) {
@@ -271,10 +268,12 @@ const loginUser = async (req, res, next) => {
         throw new Error('Wallet not linked');
       }
 
-      const isAuthorized = await isVoterAuthorizedOnChain(user.walletAddress);
-      if (!isAuthorized) {
-        res.status(403);
-        throw new Error('Blockchain authorization not completed');
+      if (user.status === 'registered') {
+        const isAuthorized = await isVoterAuthorizedOnChain(user.walletAddress);
+        if (!isAuthorized) {
+          res.status(403);
+          throw new Error('Blockchain authorization not completed');
+        }
       }
     }
 
@@ -289,11 +288,18 @@ const loginUser = async (req, res, next) => {
         throw new Error('Too many failed attempts. Please wait a few minutes before trying again.');
       }
 
-      const elapsedSeconds = Math.floor((Date.now() - existingOtp.createdAt.getTime()) / 1000);
-      if (elapsedSeconds < 60) {
+      const createdAtTime = existingOtp.createdAt
+        ? new Date(existingOtp.createdAt).getTime()
+        : Date.now();
+      const elapsedSeconds = Math.floor((Date.now() - createdAtTime) / 1000);
+
+      if (elapsedSeconds >= 0 && elapsedSeconds < 60) {
         const remainingSeconds = 60 - elapsedSeconds;
         res.status(429);
-        throw new Error(`Please wait ${remainingSeconds} seconds before requesting a new OTP.`);
+        return res.json({
+          message: `Please wait ${remainingSeconds} seconds before requesting a new OTP.`,
+          remainingSeconds
+        });
       }
 
       // Delete expired/expired-cooldown OTP record
@@ -371,19 +377,9 @@ const verifyOtp = async (req, res, next) => {
     }
 
     if (user.role === 'user') {
-      if (user.status === 'pending') {
+      if (user.status === 'blocked') {
         res.status(403);
-        throw new Error('Your registration is still under review.');
-      }
-
-      if (user.status === 'rejected') {
-        res.status(403);
-        throw new Error('Your registration has been rejected. Please complete a new registration using the election registration link.');
-      }
-
-      if (user.status !== 'registered') {
-        res.status(403);
-        throw new Error('Your registration is still under review.');
+        throw new Error('Your account has been blocked by the election administrator.');
       }
 
       if (!user.walletAddress) {
@@ -391,10 +387,12 @@ const verifyOtp = async (req, res, next) => {
         throw new Error('Wallet not linked');
       }
 
-      const isAuthorized = await isVoterAuthorizedOnChain(user.walletAddress);
-      if (!isAuthorized) {
-        res.status(403);
-        throw new Error('Blockchain authorization not completed');
+      if (user.status === 'registered') {
+        const isAuthorized = await isVoterAuthorizedOnChain(user.walletAddress);
+        if (!isAuthorized) {
+          res.status(403);
+          throw new Error('Blockchain authorization not completed');
+        }
       }
     }
 
@@ -481,11 +479,18 @@ const requestVoteOTP = async (req, res, next) => {
     // Enforce 60-second resend cooldown for voting OTP
     const existingOtp = await Otp.findOne({ email: user.email.toLowerCase(), purpose: 'voting' });
     if (existingOtp) {
-      const elapsedSeconds = Math.floor((Date.now() - existingOtp.createdAt.getTime()) / 1000);
-      if (elapsedSeconds < 60) {
+      const createdAtTime = existingOtp.createdAt
+        ? new Date(existingOtp.createdAt).getTime()
+        : Date.now();
+      const elapsedSeconds = Math.floor((Date.now() - createdAtTime) / 1000);
+
+      if (elapsedSeconds >= 0 && elapsedSeconds < 60) {
         const remainingSeconds = 60 - elapsedSeconds;
         res.status(429);
-        throw new Error(`Please wait ${remainingSeconds} seconds before requesting a new OTP.`);
+        return res.json({
+          message: `Please wait ${remainingSeconds} seconds before requesting a new OTP.`,
+          remainingSeconds
+        });
       }
       await Otp.deleteOne({ _id: existingOtp._id });
     }

@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import API from '../api/api';
 import { useAuth } from '../context/AuthContext';
+import { ROUTES } from '../constants';
 
 const Register = () => {
   const navigate = useNavigate();
@@ -123,7 +124,7 @@ const Register = () => {
       if (token) {
         login(token, userData);
         toast.success("Registration successful! Please upload your document.");
-        navigate('/upload');
+        navigate(ROUTES.UPLOAD);
       } else {
         throw new Error("No token returned from backend");
       }

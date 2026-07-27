@@ -3,6 +3,7 @@ import { useNavigate, useLocation, Navigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import API from '../api/api';
 import { useAuth } from '../context/AuthContext';
+import { ROUTES, USER_STATUS } from '../constants';
 
 const VerifyOtp = () => {
   const navigate = useNavigate();
@@ -17,16 +18,15 @@ const VerifyOtp = () => {
   const [loading, setLoading] = useState(false);
 
   // If user is already logged in and verified, prevent access to this page
-  // (unless we are in the middle of an active login flow, indicated by location.state.email)
   if (isAuthenticated && user?.isVerified && !email) {
-    return <Navigate to={user.role === 'admin' ? "/admin" : "/dashboard"} replace />;
+    return <Navigate to={user.role === 'admin' ? ROUTES.ADMIN : ROUTES.DASHBOARD} replace />;
   }
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!email) {
       toast.error('Missing email. Please login again.');
-      navigate('/login');
+      navigate(ROUTES.LOGIN);
       return;
     }
 
@@ -48,20 +48,20 @@ const VerifyOtp = () => {
       login(token, userData);
       toast.success('Successfully logged in!');
 
-      // Route based on role and status
+      // Route based strictly on role and document status:
+      // 1. Admin -> /admin
+      // 2. Blocked -> alert & login
+      // 3. User with incomplete upload -> /upload
+      // 4. All other authenticated voters -> /dashboard (Status Dashboard)
       if (userData.role === 'admin') {
-        navigate('/admin');
-      } else if (userData.status === 'blocked') {
-        // Blocked users should not be logged in — clear and redirect
+        navigate(ROUTES.ADMIN);
+      } else if (userData.status === USER_STATUS.BLOCKED) {
         toast.error('Your account has been permanently blocked.');
-        navigate('/login');
-      } else if (userData.status === 'pending' && userData.documentPath === 'pending_upload') {
-        // Registered but hasn't uploaded their document yet
-        navigate('/upload');
+        navigate(ROUTES.LOGIN);
+      } else if (userData.status === USER_STATUS.PENDING && userData.documentPath === 'pending_upload') {
+        navigate(ROUTES.UPLOAD);
       } else {
-        // status: pending (doc uploaded, waiting approval), registered, or rejected
-        // All go to the dashboard which handles their specific status UI
-        navigate('/dashboard');
+        navigate(ROUTES.DASHBOARD);
       }
     } catch (error) {
       console.error('OTP Error:', error);

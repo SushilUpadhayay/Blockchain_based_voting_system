@@ -77,8 +77,20 @@ export const AuthProvider = ({ children }) => {
     checkAuth();
   }, []);
 
+  const refreshUser = async () => {
+    try {
+      const response = await API.get('/user/profile');
+      const verifiedUser = { ...response.data, isVerified: true };
+      setUser(verifiedUser);
+      sessionStorage.setItem('user', JSON.stringify(verifiedUser));
+      return verifiedUser;
+    } catch (error) {
+      console.error('[AuthContext] Failed to refresh user profile:', error);
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, token, isAuthenticated, login, logout, setToken, loading }}>
+    <AuthContext.Provider value={{ user, token, isAuthenticated, login, logout, setToken, loading, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );
