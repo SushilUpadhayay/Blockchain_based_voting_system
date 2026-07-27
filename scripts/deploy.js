@@ -22,7 +22,7 @@ async function main() {
   const contractAddress = await voting.getAddress();
   console.log(`Voting deployed at: ${contractAddress}`);
 
-  // ── Save address to frontend ──
+  // Save address to frontend
   const frontendUtilsDir = path.join(__dirname, "../frontend/src/utils");
 
   // Ensure the utils directory exists
@@ -49,7 +49,7 @@ async function main() {
   fs.writeFileSync(abiDestPath, JSON.stringify(artifact.abi, null, 2));
   console.log(`ABI copied     → ${abiDestPath}`);
 
-  // ── Patch backend/.env with new CONTRACT_ADDRESS ──
+  // Patch backend/.env with new CONTRACT_ADDRESS 
   const backendEnvPath = path.join(__dirname, "../backend/.env");
   if (fs.existsSync(backendEnvPath)) {
     let envContent = fs.readFileSync(backendEnvPath, "utf8");
@@ -69,12 +69,12 @@ async function main() {
     console.warn("⚠️  backend/.env not found — skipping auto-patch. Set CONTRACT_ADDRESS manually.");
   }
 
-  // ── Copy compiled ABI to backend config ──
+  // Copy compiled ABI to backend config
   const backendAbiPath = path.join(__dirname, "../backend/src/config/contractABI.json");
   fs.writeFileSync(backendAbiPath, JSON.stringify(artifact, null, 2));
   console.log(`ABI copied     → ${backendAbiPath}`);
 
-  // ── Summary ───
+  // Summary
   console.log("\n" + "=".repeat(50));
   console.log("  Deployment Complete");
   console.log("=".repeat(50));

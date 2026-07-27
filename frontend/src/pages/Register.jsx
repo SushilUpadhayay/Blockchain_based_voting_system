@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import API from '../api/api';
@@ -19,6 +19,31 @@ const Register = () => {
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState(1);
   const [otp, setOtp] = useState('');
+  // cooldown: 60s timer that starts after the 3rd OTP request
+  const [cooldown, setCooldown] = useState(0);
+  // lockout: 30-minute lockout timer after 5 OTP requests
+  const [lockout, setLockout] = useState(0);
+
+  // Live countdown for cooldown timer
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = setInterval(() => {
+      setCooldown((prev) => (prev > 1 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [cooldown]);
+
+  // Live countdown for lockout timer
+  useEffect(() => {
+    if (lockout <= 0) return;
+    const timer = setInterval(() => {
+      setLockout((prev) => (prev > 1 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [lockout]);
+
+  const isBlocked = lockout > 0;
+  const isOnCooldown = cooldown > 0;
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -67,6 +92,18 @@ const Register = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    // Block client-side if locked or on cooldown
+    if (isBlocked) {
+      const mins = Math.ceil(lockout / 60);
+      toast.error(`Account locked. Please try again in ${mins} minute${mins !== 1 ? 's' : ''}.`);
+      return;
+    }
+    if (isOnCooldown) {
+      toast.error(`Please wait ${cooldown}s before requesting a new OTP.`);
+      return;
+    }
+
     setLoading(true);
 
     let address = formData.walletAddress;
@@ -74,7 +111,7 @@ const Register = () => {
       address = await handleConnectWallet();
       if (!address) {
         setLoading(false);
-        return; // Stop if wallet connection fails
+        return;
       }
     }
 
@@ -82,12 +119,12 @@ const Register = () => {
     const sigData = await getWalletSignature(address);
     if (!sigData) {
       setLoading(false);
-      return; // Stop if signing fails
+      return;
     }
     const { signature, message } = sigData;
 
     try {
-      await API.post('/auth/register-init', {
+      const response = await API.post('/auth/register-init', {
         name: formData.name,
         email: formData.email,
         dob: formData.dob,
@@ -97,11 +134,24 @@ const Register = () => {
         signature,
         message
       });
-      toast.success("OTP sent to your email!");
+      const { cooldownSeconds } = response.data;
+      if (cooldownSeconds && cooldownSeconds > 0) {
+        setCooldown(cooldownSeconds);
+      }
+      toast.success('OTP sent to your email!');
       setStep(2);
     } catch (error) {
-      console.error("Register Error:", error.response?.data || error.message);
-      toast.error(error.response?.data?.message || "Registration failed.");
+      console.error('Register Error:', error.response?.data || error.message);
+      const data = error.response?.data || {};
+      const remaining = data.remainingSeconds;
+      if (remaining && typeof remaining === 'number') {
+        if (remaining > 120) {
+          setLockout(remaining);
+        } else {
+          setCooldown(remaining);
+        }
+      }
+      toast.error(data.message || 'Registration failed.');
     } finally {
       setLoading(false);
     }
@@ -137,9 +187,20 @@ const Register = () => {
   };
 
   const handleResendOtp = async () => {
+    // Block resend if locked or on cooldown
+    if (isBlocked) {
+      const mins = Math.ceil(lockout / 60);
+      toast.error(`Account locked. Please try again in ${mins} minute${mins !== 1 ? 's' : ''}.`);
+      return;
+    }
+    if (isOnCooldown) {
+      toast.error(`Please wait ${cooldown}s before requesting a new OTP.`);
+      return;
+    }
+
     setLoading(true);
-    let address = formData.walletAddress;
-    
+    const address = formData.walletAddress;
+
     const sigData = await getWalletSignature(address);
     if (!sigData) {
       setLoading(false);
@@ -148,7 +209,7 @@ const Register = () => {
     const { signature, message } = sigData;
 
     try {
-      await API.post('/auth/register-init', {
+      const response = await API.post('/auth/register-init', {
         name: formData.name,
         email: formData.email,
         dob: formData.dob,
@@ -158,12 +219,31 @@ const Register = () => {
         signature,
         message
       });
-      toast.success("A new OTP has been sent to your email.");
+      const { cooldownSeconds } = response.data;
+      if (cooldownSeconds && cooldownSeconds > 0) {
+        setCooldown(cooldownSeconds);
+      }
+      toast.success('A new OTP has been sent to your email.');
     } catch (error) {
-      toast.error(error.response?.data?.message || "Failed to resend OTP.");
+      const data = error.response?.data || {};
+      const remaining = data.remainingSeconds;
+      if (remaining && typeof remaining === 'number') {
+        if (remaining > 120) {
+          setLockout(remaining);
+        } else {
+          setCooldown(remaining);
+        }
+      }
+      toast.error(data.message || 'Failed to resend OTP.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const formatTime = (secs) => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return m > 0 ? `${m}m ${s}s` : `${s}s`;
   };
 
   return (
@@ -263,10 +343,18 @@ const Register = () => {
 
             <button
               type="submit"
-              disabled={loading}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg transition-colors flex justify-center items-center mt-6"
+              disabled={loading || isBlocked || isOnCooldown}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg transition-colors flex justify-center items-center mt-6 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> : 'Send OTP'}
+              {loading ? (
+                <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+              ) : isBlocked ? (
+                `Locked — ${formatTime(lockout)}`
+              ) : isOnCooldown ? (
+                `Please wait ${cooldown}s`
+              ) : (
+                'Send OTP'
+              )}
             </button>
           </form>
         ) : (
@@ -300,15 +388,27 @@ const Register = () => {
                   </span>
                 ) : 'Verify & Register'}
               </button>
-              
+
+              {isBlocked && (
+                <div className="p-3 bg-red-50 border border-red-200 text-red-800 text-sm rounded-lg text-center font-medium">
+                  🔒 Account locked. Resend available in <strong>{formatTime(lockout)}</strong>.
+                </div>
+              )}
+
+              {!isBlocked && isOnCooldown && (
+                <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg text-center font-medium">
+                  Please wait <strong>{cooldown}s</strong> before resending.
+                </div>
+              )}
+
               <button
                 type="button"
                 onClick={handleResendOtp}
-                disabled={loading}
-                className="text-sm font-medium hover:underline opacity-70 hover:opacity-100 disabled:opacity-30"
+                disabled={loading || isBlocked || isOnCooldown}
+                className="text-sm font-medium hover:underline opacity-70 hover:opacity-100 disabled:opacity-30 disabled:cursor-not-allowed"
                 style={{ color: 'var(--text-color)' }}
               >
-                Resend Code
+                {isBlocked ? `Locked — ${formatTime(lockout)}` : isOnCooldown ? `Resend in ${cooldown}s` : 'Resend Code'}
               </button>
             </div>
           </form>

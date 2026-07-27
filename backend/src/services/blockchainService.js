@@ -166,10 +166,27 @@ const isVoterAuthorizedOnChain = async (walletAddress) => {
   }
 };
 
+const getElectionStatusOnChain = async () => {
+  try {
+    const contract = await getContract();
+
+    if (!contract.interface.getFunction('getElectionStatus')) {
+      throw new Error('getElectionStatus function not found in ABI');
+    }
+
+    const [active, started] = await contract.getElectionStatus();
+    return { active, started };
+  } catch (error) {
+    console.error('[BlockchainService] getElectionStatusOnChain error:', error.message);
+    throw new Error('Blockchain status retrieval failed: ' + error.message);
+  }
+};
+
 module.exports = {
   registerVoterOnChain,
   addCandidateOnChain,
   startElectionOnChain,
   endElectionOnChain,
   isVoterAuthorizedOnChain,
+  getElectionStatusOnChain,
 };

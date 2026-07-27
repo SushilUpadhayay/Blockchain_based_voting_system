@@ -1,9 +1,11 @@
 const User = require('../models/User');
 const Otp = require('../models/Otp');
+const OtpLimit = require('../models/OtpLimit');
 const generateToken = require('../utils/generateToken');
 const { generateOTP, sendOTP, hashOTP } = require('../services/otpService');
 const { generateNonce, verifySignature } = require('../services/walletService');
 const { isVoterAuthorizedOnChain } = require('../services/blockchainService');
+const { checkAndRecordOtpRequest } = require('../services/otpLimitService');
 
 // NOTE: All OTP storage has been migrated to a dedicated MongoDB 'Otp' collection.
 // Security hardens added: OTP hashing (SHA-256), 60s resend cooldown, 
@@ -81,25 +83,25 @@ const registerInit = async (req, res, next) => {
       // Note: If user.status === 'rejected', re-registration is allowed and old record will be replaced.
     }
 
-    // 3. Enforce 60-second OTP resend cooldown
-    const existingOtp = await Otp.findOne({ email: email.toLowerCase(), purpose: 'registration' });
-    if (existingOtp) {
-      const createdAtTime = existingOtp.createdAt
-        ? new Date(existingOtp.createdAt).getTime()
-        : Date.now();
-      const elapsedSeconds = Math.floor((Date.now() - createdAtTime) / 1000);
-
-      if (elapsedSeconds >= 0 && elapsedSeconds < 60) {
-        const remainingSeconds = 60 - elapsedSeconds;
-        res.status(429);
-        return res.json({
-          message: `Please wait ${remainingSeconds} seconds before requesting a new OTP.`,
-          remainingSeconds
+    // 3. Enforce OTP Rate Limiting
+    const rateLimitResult = await checkAndRecordOtpRequest(email, 'registration');
+    if (!rateLimitResult.allowed) {
+      if (rateLimitResult.errorType === 'lockout') {
+        const remainingMinutes = Math.ceil(rateLimitResult.remainingSeconds / 60);
+        return res.status(429).json({
+          message: `Too many registration attempts. Your account is locked out. Please try again in ${remainingMinutes} minutes.`,
+          remainingSeconds: rateLimitResult.remainingSeconds
+        });
+      } else {
+        return res.status(429).json({
+          message: `Please wait ${rateLimitResult.remainingSeconds} seconds before requesting a new OTP.`,
+          remainingSeconds: rateLimitResult.remainingSeconds
         });
       }
-      // Clean up previous OTP if cooldown expired
-      await Otp.deleteOne({ _id: existingOtp._id });
     }
+
+    // Clean up any previous registration OTP for this email
+    await Otp.deleteMany({ email: email.toLowerCase(), purpose: 'registration' });
 
     // 4. Generate raw OTP, hash it, and store securely
     const otp = generateOTP();
@@ -126,7 +128,7 @@ const registerInit = async (req, res, next) => {
     res.status(200).json({
       message: 'OTP sent to your email. Please verify to complete registration.',
       email,
-      cooldownSeconds: 60
+      cooldownSeconds: rateLimitResult.nextCooldownSeconds
     });
   } catch (error) {
     next(error);
@@ -143,6 +145,14 @@ const verifyRegisterOtp = async (req, res, next) => {
     if (!email || !otp) {
       res.status(400);
       throw new Error('Email and OTP are required');
+    }
+
+    // Check if locked out in OtpLimit
+    const limitDoc = await OtpLimit.findOne({ email: email.toLowerCase(), purpose: 'registration' });
+    if (limitDoc && limitDoc.lockoutUntil && limitDoc.lockoutUntil > new Date()) {
+      const remainingMinutes = Math.ceil((limitDoc.lockoutUntil.getTime() - Date.now()) / (60 * 1000));
+      res.status(429);
+      throw new Error(`Your registration is locked out due to too many OTP requests. Please try again in ${remainingMinutes} minutes.`);
     }
 
     const record = await Otp.findOne({
@@ -277,34 +287,26 @@ const loginUser = async (req, res, next) => {
       }
     }
 
-    // Enforce rate-limit lockout and 60-second resend cooldown
-    const existingOtp = await Otp.findOne({
-      email: email.toLowerCase(),
-      purpose: 'login'
-    });
-    if (existingOtp) {
-      if (existingOtp.attempts >= 5 && existingOtp.expiresAt > new Date()) {
-        res.status(429);
-        throw new Error('Too many failed attempts. Please wait a few minutes before trying again.');
-      }
-
-      const createdAtTime = existingOtp.createdAt
-        ? new Date(existingOtp.createdAt).getTime()
-        : Date.now();
-      const elapsedSeconds = Math.floor((Date.now() - createdAtTime) / 1000);
-
-      if (elapsedSeconds >= 0 && elapsedSeconds < 60) {
-        const remainingSeconds = 60 - elapsedSeconds;
-        res.status(429);
-        return res.json({
-          message: `Please wait ${remainingSeconds} seconds before requesting a new OTP.`,
-          remainingSeconds
+    // Enforce rate-limit lockout and 60-second resend cooldown (only if there was at least one verification attempt)
+    // Enforce OTP Rate Limiting
+    const rateLimitResult = await checkAndRecordOtpRequest(email, 'login');
+    if (!rateLimitResult.allowed) {
+      if (rateLimitResult.errorType === 'lockout') {
+        const remainingMinutes = Math.ceil(rateLimitResult.remainingSeconds / 60);
+        return res.status(429).json({
+          message: `Too many OTP requests. Your account is locked out. Please try again in ${remainingMinutes} minutes.`,
+          remainingSeconds: rateLimitResult.remainingSeconds
+        });
+      } else {
+        return res.status(429).json({
+          message: `Please wait ${rateLimitResult.remainingSeconds} seconds before requesting a new OTP.`,
+          remainingSeconds: rateLimitResult.remainingSeconds
         });
       }
-
-      // Delete expired/expired-cooldown OTP record
-      await Otp.deleteOne({ _id: existingOtp._id });
     }
+
+    // Clean up any previous login OTP for this email
+    await Otp.deleteMany({ email: email.toLowerCase(), purpose: 'login' });
 
     // Generate, hash and save secure OTP
     const otp = generateOTP();
@@ -344,7 +346,7 @@ const loginUser = async (req, res, next) => {
       requireSignature,
       walletAddress,
       signMessage,
-      cooldownSeconds: 60
+      cooldownSeconds: rateLimitResult.nextCooldownSeconds
     });
   } catch (error) {
     next(error);
@@ -361,6 +363,14 @@ const verifyOtp = async (req, res, next) => {
     if (!email || !otp) {
       res.status(400);
       throw new Error('Email and OTP are required');
+    }
+
+    // Check if locked out in OtpLimit
+    const limitDoc = await OtpLimit.findOne({ email: email.toLowerCase(), purpose: 'login' });
+    if (limitDoc && limitDoc.lockoutUntil && limitDoc.lockoutUntil > new Date()) {
+      const remainingMinutes = Math.ceil((limitDoc.lockoutUntil.getTime() - Date.now()) / (60 * 1000));
+      res.status(429);
+      throw new Error(`Your account is locked out due to too many OTP requests. Please try again in ${remainingMinutes} minutes.`);
     }
 
     const user = await User.findOne({ email: email.toLowerCase() });
@@ -476,24 +486,25 @@ const requestVoteOTP = async (req, res, next) => {
       throw new Error('Only registered and approved voters can request a voting OTP');
     }
 
-    // Enforce 60-second resend cooldown for voting OTP
-    const existingOtp = await Otp.findOne({ email: user.email.toLowerCase(), purpose: 'voting' });
-    if (existingOtp) {
-      const createdAtTime = existingOtp.createdAt
-        ? new Date(existingOtp.createdAt).getTime()
-        : Date.now();
-      const elapsedSeconds = Math.floor((Date.now() - createdAtTime) / 1000);
-
-      if (elapsedSeconds >= 0 && elapsedSeconds < 60) {
-        const remainingSeconds = 60 - elapsedSeconds;
-        res.status(429);
-        return res.json({
-          message: `Please wait ${remainingSeconds} seconds before requesting a new OTP.`,
-          remainingSeconds
+    // Enforce OTP Rate Limiting
+    const rateLimitResult = await checkAndRecordOtpRequest(user.email, 'voting');
+    if (!rateLimitResult.allowed) {
+      if (rateLimitResult.errorType === 'lockout') {
+        const remainingMinutes = Math.ceil(rateLimitResult.remainingSeconds / 60);
+        return res.status(429).json({
+          message: `Too many voting OTP requests. Your account is locked out. Please try again in ${remainingMinutes} minutes.`,
+          remainingSeconds: rateLimitResult.remainingSeconds
+        });
+      } else {
+        return res.status(429).json({
+          message: `Please wait ${rateLimitResult.remainingSeconds} seconds before requesting a new OTP.`,
+          remainingSeconds: rateLimitResult.remainingSeconds
         });
       }
-      await Otp.deleteOne({ _id: existingOtp._id });
     }
+
+    // Clean up any previous voting OTP for this email
+    await Otp.deleteMany({ email: user.email.toLowerCase(), purpose: 'voting' });
 
     const otp = generateOTP();
     const hashedOtp = hashOTP(otp);
@@ -516,7 +527,7 @@ const requestVoteOTP = async (req, res, next) => {
 
     res.json({
       message: 'Voting OTP sent to your registered email',
-      cooldownSeconds: 60
+      cooldownSeconds: rateLimitResult.nextCooldownSeconds
     });
   } catch (error) {
     next(error);
@@ -534,6 +545,14 @@ const verifyVoteOTP = async (req, res, next) => {
     if (!user) {
       res.status(404);
       throw new Error('User not found');
+    }
+
+    // Check if locked out in OtpLimit
+    const limitDoc = await OtpLimit.findOne({ email: user.email.toLowerCase(), purpose: 'voting' });
+    if (limitDoc && limitDoc.lockoutUntil && limitDoc.lockoutUntil > new Date()) {
+      const remainingMinutes = Math.ceil((limitDoc.lockoutUntil.getTime() - Date.now()) / (60 * 1000));
+      res.status(429);
+      throw new Error(`Your voting access is locked out due to too many OTP requests. Please try again in ${remainingMinutes} minutes.`);
     }
 
     const otpRecord = await Otp.findOne({

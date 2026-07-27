@@ -1,6 +1,18 @@
 const User = require('../models/User');
-const { registerVoterOnChain, startElectionOnChain, endElectionOnChain, addCandidateOnChain, isVoterAuthorizedOnChain } = require('../services/blockchainService');
+const { registerVoterOnChain, startElectionOnChain, endElectionOnChain, addCandidateOnChain, isVoterAuthorizedOnChain, getElectionStatusOnChain } = require('../services/blockchainService');
 const { sendStatusNotificationEmail } = require('../services/otpService');
+
+/**
+ * Helper to ensure the election has not started.
+ * Throws an error if the election has already started.
+ */
+const checkElectionStarted = async (res) => {
+  const electionStatus = await getElectionStatusOnChain();
+  if (electionStatus.started) {
+    res.status(400);
+    throw new Error('Cannot modify user status after the election has started.');
+  }
+};
 
 // @desc    Get all verified users waiting for admin approval
 // @route   GET /api/admin/pending-users
@@ -21,6 +33,7 @@ const getPendingUsers = async (req, res, next) => {
 // @access  Private/Admin
 const approveUser = async (req, res, next) => {
   try {
+    await checkElectionStarted(res);
     const user = await User.findById(req.params.id);
 
     if (!user) {
@@ -73,6 +86,7 @@ const approveUser = async (req, res, next) => {
 // @access  Private/Admin
 const rejectUser = async (req, res, next) => {
   try {
+    await checkElectionStarted(res);
     const { reason } = req.body;
     
     if (!reason) {
@@ -107,6 +121,7 @@ const rejectUser = async (req, res, next) => {
 // @access  Private/Admin
 const blockUser = async (req, res, next) => {
   try {
+    await checkElectionStarted(res);
     const user = await User.findById(req.params.id);
 
     if (!user) {
