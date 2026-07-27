@@ -88,15 +88,15 @@ const AdminDashboard = () => {
   };
 
   const handleApprove = async (id) => {
+    const toastId = toast.loading('Approving voter...');
     try {
       setLoading(true);
-      const toastId = toast.loading('Registering voter on blockchain...');
       await API.post(`/admin/approve/${id}`);
       toast.success('User approved and registered on blockchain', { id: toastId });
       fetchUsers();
       fetchRegisteredUsers();
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Blockchain registration failed');
+      toast.error(error.response?.data?.message || 'Approval failed', { id: toastId });
     } finally {
       setLoading(false);
     }
@@ -441,6 +441,16 @@ const AdminDashboard = () => {
             </div>
           </div>
 
+          {/* Election-active lock banner */}
+          {electionStatus.active && (
+            <div className="mx-6 mt-4 mb-2 flex items-center gap-3 bg-amber-50 border border-amber-300 text-amber-800 px-4 py-3 rounded-xl text-sm font-medium">
+              <AlertCircle className="w-5 h-5 flex-shrink-0 text-amber-500" />
+              <span>
+                <strong>Election is currently active.</strong> Approve, Reject, and Block actions are disabled while voting is in progress.
+              </span>
+            </div>
+          )}
+
           <div className="overflow-x-auto">
             {users.length === 0 ? (
               <div className="py-20 text-center">
@@ -565,14 +575,14 @@ const AdminDashboard = () => {
                           </div>
                         </td>
 
-                        {/* Decision buttons — unchanged */}
+                        {/* Decision buttons */}
                         <td className="py-4 px-6">
                           <div className="flex justify-center items-center gap-3">
                             <button
                               onClick={() => handleApprove(u._id)}
-                              disabled={loading || !u.walletAddress}
-                              className="bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white p-2 rounded-lg transition-all shadow-md shadow-emerald-100"
-                              title="Approve & Register"
+                              disabled={loading || !u.walletAddress || electionStatus.active}
+                              className="bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed text-white p-2 rounded-lg transition-all shadow-md shadow-emerald-100"
+                              title={electionStatus.active ? 'Cannot approve during an active election' : 'Approve & Register'}
                             >
                               <CheckCircle className="w-5 h-5" />
                             </button>
@@ -580,9 +590,9 @@ const AdminDashboard = () => {
                               onClick={() =>
                                 setDialogConfig({ isOpen: true, type: 'reject', userId: u._id, reason: '' })
                               }
-                              disabled={loading}
-                              className="bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white p-2 rounded-lg transition-all shadow-md shadow-orange-100"
-                              title="Reject Applicant"
+                              disabled={loading || electionStatus.active}
+                              className="bg-orange-500 hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed text-white p-2 rounded-lg transition-all shadow-md shadow-orange-100"
+                              title={electionStatus.active ? 'Cannot reject during an active election' : 'Reject Applicant'}
                             >
                               <XCircle className="w-5 h-5" />
                             </button>
@@ -590,9 +600,9 @@ const AdminDashboard = () => {
                               onClick={() =>
                                 setDialogConfig({ isOpen: true, type: 'block', userId: u._id, reason: '' })
                               }
-                              disabled={loading}
-                              className="bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white p-2 rounded-lg transition-all shadow-md shadow-rose-200"
-                              title="Permanently Block"
+                              disabled={loading || electionStatus.active}
+                              className="bg-rose-600 hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed text-white p-2 rounded-lg transition-all shadow-md shadow-rose-200"
+                              title={electionStatus.active ? 'Cannot block during an active election' : 'Permanently Block'}
                             >
                               <AlertCircle className="w-5 h-5" />
                             </button>

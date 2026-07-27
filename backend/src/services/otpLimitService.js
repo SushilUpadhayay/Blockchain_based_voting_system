@@ -2,25 +2,38 @@ const OtpLimit = require('../models/OtpLimit');
 
 /**
  * Checks if a user is allowed to request an OTP and updates rate-limit records.
- * 
+ *
  * Rules:
- * 1. 30-minute Lockout: If user has made >= 5 requests in a rolling 15-minute window, they are locked out for 30 minutes.
- * 2. 60-second Cooldown: Triggered after the 3rd request (i.e. if request count >= 3).
- * 
+ * 1. Free requests: Requests #1 and #2 are always allowed with no cooldown.
+ * 2. 60-second Cooldown (Rule 7): After every successful OTP request from #3 onwards,
+ *    a 60-second cooldown is enforced before the next request is permitted.
+ *    This applies to requests #3, #4, and #5.
+ * 3. 30-minute Lockout (Rule 9): If a user has already made 5 successful requests in the
+ *    rolling 15-minute window and attempts a 6th, the request is rejected and the user
+ *    is locked out for 30 minutes.
+ *
+ * Request flow:
+ *   #1 → allowed, no cooldown
+ *   #2 → allowed, no cooldown
+ *   #3 → allowed, 60s cooldown starts
+ *   #4 → allowed after 60s, 60s cooldown starts
+ *   #5 → allowed after 60s, 60s cooldown starts
+ *   #6 → REJECTED, 30-minute lockout triggered
+ *
  * @param {string} email - User's email.
  * @param {string} purpose - 'registration', 'login', or 'voting'.
  * @returns {Promise<{ allowed: boolean, remainingSeconds?: number, errorType?: 'lockout' | 'cooldown', nextCooldownSeconds?: number }>}
  */
 const checkAndRecordOtpRequest = async (email, purpose) => {
   const emailLower = email.toLowerCase();
-  
+
   // 1. Find or create the limit document
   let limitDoc = await OtpLimit.findOne({ email: emailLower, purpose });
   if (!limitDoc) {
     limitDoc = new OtpLimit({ email: emailLower, purpose, requestTimestamps: [] });
   }
 
-  // 2. Lockout Check
+  // 2. Active Lockout Check
   if (limitDoc.lockoutUntil && limitDoc.lockoutUntil > new Date()) {
     const remainingSeconds = Math.ceil((limitDoc.lockoutUntil.getTime() - Date.now()) / 1000);
     return {
@@ -30,10 +43,10 @@ const checkAndRecordOtpRequest = async (email, purpose) => {
     };
   }
 
-  // Clear expired lockout
+  // Clear an expired lockout and reset the window
   if (limitDoc.lockoutUntil && limitDoc.lockoutUntil <= new Date()) {
     limitDoc.lockoutUntil = null;
-    limitDoc.requestTimestamps = []; // reset timestamps after lockout expires
+    limitDoc.requestTimestamps = [];
   }
 
   // 3. Clean up timestamps older than 15 minutes (rolling window)
@@ -42,8 +55,8 @@ const checkAndRecordOtpRequest = async (email, purpose) => {
 
   const requestCount = limitDoc.requestTimestamps.length;
 
-  // 4. Rolling Limit Check (max 5 requests per 15 mins)
-  // If count is already 5, they are attempting the 6th request, trigger 30-minute lockout immediately
+  // 4. Rolling Limit Check — max 5 successful requests per 15-minute window.
+  //    If there are already 5 recorded timestamps, this is the 6th attempt → lock out (Rule 9).
   if (requestCount >= 5) {
     limitDoc.lockoutUntil = new Date(Date.now() + 30 * 60 * 1000);
     await limitDoc.save();
@@ -54,39 +67,31 @@ const checkAndRecordOtpRequest = async (email, purpose) => {
     };
   }
 
-  // 5. Cooldown Check (starts after the 3rd request)
-  // Count is 3 or 4, meaning T3 or T4 has been recorded, we need a 60-second cooldown from the last request
+  // 5. 60-Second Cooldown Check (Rule 7) — applies from the 3rd request onwards.
+  //    After requests #3, #4, and #5 are recorded, the next attempt must wait 60 seconds.
   if (requestCount >= 3) {
     const lastRequestTime = limitDoc.requestTimestamps[limitDoc.requestTimestamps.length - 1];
-    const elapsedTime = Math.floor((Date.now() - lastRequestTime.getTime()) / 1000);
+    const elapsedSeconds = Math.floor((Date.now() - lastRequestTime.getTime()) / 1000);
 
-    if (elapsedTime >= 0 && elapsedTime < 60) {
-      const remainingSeconds = 60 - elapsedTime;
+    if (elapsedSeconds >= 0 && elapsedSeconds < 60) {
       return {
         allowed: false,
-        remainingSeconds,
+        remainingSeconds: 60 - elapsedSeconds,
         errorType: 'cooldown'
       };
     }
   }
 
-  // 6. Request is allowed, record it!
+  // 6. Request is allowed — record the timestamp
   limitDoc.requestTimestamps.push(new Date());
   await limitDoc.save();
 
-  // Determine next cooldown returned to frontend
-  let nextCooldownSeconds = 0;
+  // Determine the cooldown the frontend should display after this request.
+  // Rule 7: every successful request from #3 onwards starts a 60s cooldown.
+  // After request #5 the 60s countdown still applies; the NEXT attempt after that
+  // will trigger a 30-minute lockout (Rule 9) rather than another OTP.
   const newCount = limitDoc.requestTimestamps.length;
-  if (newCount === 3 || newCount === 4) {
-    // 3rd or 4th request made, next request will face a 60s cooldown
-    nextCooldownSeconds = 60;
-  } else if (newCount === 5) {
-    // 5th request made, next request is blocked for 15 minutes rolling window
-    // The cooldown is when the oldest request falls out of the 15-minute window
-    const oldestRequestTime = limitDoc.requestTimestamps[0];
-    const remainingTime = Math.ceil((oldestRequestTime.getTime() + 15 * 60 * 1000 - Date.now()) / 1000);
-    nextCooldownSeconds = Math.max(0, remainingTime);
-  }
+  const nextCooldownSeconds = newCount >= 3 ? 60 : 0;
 
   return {
     allowed: true,
