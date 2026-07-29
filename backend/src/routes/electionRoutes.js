@@ -42,7 +42,7 @@ router.post('/:electionId/start', protect, isSuperAdmin, startElection);
 router.post('/:electionId/end', protect, isSuperAdmin, endElection);
 router.get('/:electionId/results', getElectionResults);
 
-// On-demand blockchain sync (Super Admin or Verifier may trigger)
+// On-demand blockchain sync (Election Administrator or Verifier may trigger)
 router.post('/:electionId/sync-blockchain', protect, isRegistrationVerifier, syncElectionFromChain);
 
 module.exports = router;

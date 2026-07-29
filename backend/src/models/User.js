@@ -38,7 +38,7 @@ const electionRegistrationSchema = new mongoose.Schema(
 
 /**
  * Per-election admin/verifier role subdocument.
- * Used by both Super Admin (Piece 5) and Registration Verifier (Piece 3).
+ * Used by both Election Administrator (Piece 5) and Registration Verifier (Piece 3).
  * Kept parallel to elections[] (voter registrations) so roles are per-election scoped,
  * not a single global field that would clobber multi-election participation.
  */
@@ -195,7 +195,7 @@ userSchema.methods.matchPassword = async function (enteredPassword) {
 
 /**
  * Get per-election admin/verifier role for a given electionId.
- * Used by Piece 3 (verifier) and Piece 5 (superadmin).
+ * Used by Piece 3 (verifier) and Piece 5 (election administrator).
  * @param {number} electionId
  * @returns {'superadmin'|'verifier'|null}
  */

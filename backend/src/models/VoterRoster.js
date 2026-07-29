@@ -32,6 +32,11 @@ const voterRosterSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    address: {
+      type: String,
+      required: true,
+      trim: true,
+    },
     invitationSent: {
       type: Boolean,
       default: false,

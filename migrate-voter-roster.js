@@ -16,6 +16,9 @@ mongoose.connect(MONGO_URI).then(async () => {
       { dateOfBirth: { $exists: false } },
       { dateOfBirth: null },
       { dateOfBirth: '' },
+      { address: { $exists: false } },
+      { address: null },
+      { address: '' },
     ],
   };
 
@@ -25,10 +28,10 @@ mongoose.connect(MONGO_URI).then(async () => {
     console.log('No stale documents found. Total documents: ' + total);
   } else {
     const result = await col.deleteMany(staleFilter);
-    console.log('Removed ' + result.deletedCount + ' stale VoterRoster document(s) missing citizenshipNumber or dateOfBirth.');
+    console.log('Removed ' + result.deletedCount + ' stale VoterRoster document(s) missing citizenshipNumber, dateOfBirth, or address.');
     const remaining = await col.countDocuments();
     console.log('Documents before: ' + total + ' -> after: ' + remaining);
-    console.log('Affected voters must be re-uploaded with the new 5-column Excel format.');
+    console.log('Affected voters must be re-uploaded with the new 6-column Excel format.');
   }
 
   await mongoose.disconnect();

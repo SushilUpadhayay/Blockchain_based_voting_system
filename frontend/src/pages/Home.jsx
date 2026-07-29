@@ -81,7 +81,7 @@ const Home = () => {
               },
               {
                 title: "Verifier Delegation",
-                desc: "Super Admins can invite Registration Verifiers to verify voter document applications.",
+                desc: "Election Administrators can invite Registration Verifiers to verify voter document applications.",
                 icon: <Users className="w-8 h-8 text-green-600" />,
                 bg: "bg-green-50 dark:bg-green-900/20"
               },

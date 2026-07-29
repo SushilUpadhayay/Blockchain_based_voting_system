@@ -89,7 +89,7 @@ const ElectionPortal = () => {
     const isSuperAdmin = savedElectionRole === 'superadmin' || (userWallet && (election.superAdmin || '').toLowerCase() === userWallet);
     const isVerifier = savedElectionRole === 'verifier' || (userWallet && (election.verifiers || []).map((v) => v.toLowerCase()).includes(userWallet));
 
-    if (isSuperAdmin) return { role: 'Super Admin', color: 'bg-purple-100 text-purple-800 border-purple-200' };
+    if (isSuperAdmin) return { role: 'Election Administrator', color: 'bg-purple-100 text-purple-800 border-purple-200' };
     if (isVerifier) return { role: 'Registration Verifier', color: 'bg-indigo-100 text-indigo-800 border-indigo-200' };
     return null;
   };
@@ -200,12 +200,12 @@ const ElectionPortal = () => {
 
                   <div className="pt-4 border-t border-black/5 dark:border-white/5 flex flex-col gap-2">
                     {/* Role-specific Navigation Links */}
-                    {userRoleInfo?.role === 'Super Admin' && (
+                    {userRoleInfo?.role === 'Election Administrator' && (
                       <button
                         onClick={() => navigate(`/elections/${election.electionId}/admin`)}
                         className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 rounded-xl text-sm transition-all flex items-center justify-center gap-2"
                       >
-                        Super Admin Panel <ArrowRight className="w-4 h-4" />
+                        Election Administrator Panel <ArrowRight className="w-4 h-4" />
                       </button>
                     )}
 

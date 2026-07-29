@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
@@ -13,10 +13,19 @@ import {
   X,
   RotateCw,
   Ban,
+  Eye,
+  Search,
+  Filter,
+  SlidersHorizontal,
+  AlertTriangle,
+  FileQuestion,
+  Check,
+  RotateCcw
 } from 'lucide-react';
 import API from '../api/api';
 import Navbar from '../components/Navbar';
 import ConfirmDialog from '../components/ConfirmDialog';
+import VerificationReviewModal from '../components/VerificationReviewModal';
 import { useVoting } from '../context/VotingContext';
 
 const VerifierDashboard = () => {
@@ -28,7 +37,12 @@ const VerifierDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [expandedOcrRow, setExpandedOcrRow] = useState(null);
-  const [selectedDocument, setSelectedDocument] = useState(null);
+  const [selectedVoterForReview, setSelectedVoterForReview] = useState(null);
+
+  // Search, Filter, and Sort states
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterStatus, setFilterStatus] = useState('ALL'); // ALL, NO_ISSUES, HAS_ISSUES, EXCEL_MISSING, OCR_MISSING
+  const [sortBy, setSortBy] = useState('NAME_ASC'); // NAME_ASC, NAME_DESC, MATCHES_DESC, MISMATCHES_DESC, DATE_DESC
 
   const [dialogConfig, setDialogConfig] = useState({
     isOpen: false,
@@ -63,7 +77,6 @@ const VerifierDashboard = () => {
       await approveVoter(electionId, userId, walletAddress);
       fetchPendingUsers();
     } catch (err) {
-      // error already shown by context toast
       console.error('Approval error:', err);
     } finally {
       setActionLoading(false);
@@ -121,6 +134,112 @@ const VerifierDashboard = () => {
     }
   };
 
+  // Helper to get voter verification status category (NO_ISSUES, HAS_ISSUES, EXCEL_MISSING, OCR_MISSING)
+  const getVoterStatusCategory = (voter) => {
+    const ver = voter?.verification;
+    if (!ver) return 'OCR_MISSING';
+
+    const { excelFound, ocrFound, summary = {}, issues = [] } = ver;
+
+    if (!excelFound && !ocrFound) return 'EXCEL_AND_OCR_MISSING';
+    if (!excelFound) return 'EXCEL_MISSING';
+    if (!ocrFound) return 'OCR_MISSING';
+
+    if (issues.length > 0 || (summary.mismatches || 0) > 0 || (summary.missing || 0) > 0) {
+      return 'HAS_ISSUES';
+    }
+
+    return 'NO_ISSUES';
+  };
+
+  // Memoized Metric Statistics
+  const dashboardStats = useMemo(() => {
+    let total = pendingUsers.length;
+    let noIssues = 0;
+    let hasIssues = 0;
+    let excelMissing = 0;
+    let ocrMissing = 0;
+
+    for (const user of pendingUsers) {
+      const ver = user.verification || {};
+      const cat = getVoterStatusCategory(user);
+
+      if (cat === 'NO_ISSUES') {
+        noIssues++;
+      } else if (cat === 'HAS_ISSUES') {
+        hasIssues++;
+      }
+
+      if (!ver.excelFound) {
+        excelMissing++;
+      }
+      if (!ver.ocrFound) {
+        ocrMissing++;
+      }
+    }
+
+    return { total, noIssues, hasIssues, excelMissing, ocrMissing };
+  }, [pendingUsers]);
+
+  // Memoized Filtering, Searching & Sorting
+  const processedUsers = useMemo(() => {
+    return pendingUsers
+      .filter((user) => {
+        // Search Filter
+        if (searchQuery.trim()) {
+          const q = searchQuery.toLowerCase().trim();
+          const nameMatch = (user.name || '').toLowerCase().includes(q);
+          const emailMatch = (user.email || '').toLowerCase().includes(q);
+          const idMatch = (user.citizenshipNumber || '').toLowerCase().includes(q);
+          const empMatch = (user.employeeId || '').toLowerCase().includes(q);
+
+          if (!nameMatch && !emailMatch && !idMatch && !empMatch) {
+            return false;
+          }
+        }
+
+        // Status Filter
+        const ver = user.verification || {};
+        const cat = getVoterStatusCategory(user);
+
+        if (filterStatus === 'NO_ISSUES' && cat !== 'NO_ISSUES') return false;
+        if (filterStatus === 'HAS_ISSUES' && cat !== 'HAS_ISSUES') return false;
+        if (filterStatus === 'EXCEL_MISSING' && ver.excelFound) return false;
+        if (filterStatus === 'OCR_MISSING' && ver.ocrFound) return false;
+
+        return true;
+      })
+      .sort((a, b) => {
+        const aVer = a.verification || {};
+        const bVer = b.verification || {};
+        const aMatches = aVer.summary?.matches || 0;
+        const bMatches = bVer.summary?.matches || 0;
+        const aMismatches = aVer.summary?.mismatches || 0;
+        const bMismatches = bVer.summary?.mismatches || 0;
+
+        switch (sortBy) {
+          case 'NAME_ASC':
+            return (a.name || '').localeCompare(b.name || '');
+          case 'NAME_DESC':
+            return (b.name || '').localeCompare(a.name || '');
+          case 'MATCHES_DESC':
+            return bMatches - aMatches;
+          case 'MISMATCHES_DESC':
+            return bMismatches - aMismatches;
+          case 'DATE_DESC':
+            return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+          default:
+            return 0;
+        }
+      });
+  }, [pendingUsers, searchQuery, filterStatus, sortBy]);
+
+  const resetFilters = () => {
+    setSearchQuery('');
+    setFilterStatus('ALL');
+    setSortBy('NAME_ASC');
+  };
+
   return (
     <div className="min-h-screen flex flex-col transition-colors duration-300" style={{ backgroundColor: 'var(--bg-color)' }}>
       <Navbar />
@@ -155,14 +274,215 @@ const VerifierDashboard = () => {
           </button>
         </div>
 
+        {/* Dashboard Metric Summary Cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
+          <button
+            onClick={() => setFilterStatus('ALL')}
+            className={`p-4 rounded-2xl border text-left transition-all ${
+              filterStatus === 'ALL'
+                ? 'ring-2 ring-indigo-500 shadow-md bg-indigo-50/50 dark:bg-indigo-950/30'
+                : 'hover:bg-black/5 dark:hover:bg-white/5'
+            }`}
+            style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}
+          >
+            <div className="text-xs font-semibold opacity-60 mb-1">Pending Applications</div>
+            <div className="text-2xl font-extrabold text-indigo-600 dark:text-indigo-400">{dashboardStats.total}</div>
+          </button>
+
+          <button
+            onClick={() => setFilterStatus('NO_ISSUES')}
+            className={`p-4 rounded-2xl border text-left transition-all ${
+              filterStatus === 'NO_ISSUES'
+                ? 'ring-2 ring-emerald-500 shadow-md bg-emerald-50/50 dark:bg-emerald-950/30'
+                : 'hover:bg-black/5 dark:hover:bg-white/5'
+            }`}
+            style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}
+          >
+            <div className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 mb-1 flex items-center gap-1">
+              <CheckCircle className="w-3.5 h-3.5" /> No Issues
+            </div>
+            <div className="text-2xl font-extrabold text-emerald-600 dark:text-emerald-400">{dashboardStats.noIssues}</div>
+          </button>
+
+          <button
+            onClick={() => setFilterStatus('HAS_ISSUES')}
+            className={`p-4 rounded-2xl border text-left transition-all ${
+              filterStatus === 'HAS_ISSUES'
+                ? 'ring-2 ring-amber-500 shadow-md bg-amber-50/50 dark:bg-amber-950/30'
+                : 'hover:bg-black/5 dark:hover:bg-white/5'
+            }`}
+            style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}
+          >
+            <div className="text-xs font-semibold text-amber-600 dark:text-amber-400 mb-1 flex items-center gap-1">
+              <AlertTriangle className="w-3.5 h-3.5" /> Has Issues
+            </div>
+            <div className="text-2xl font-extrabold text-amber-600 dark:text-amber-400">{dashboardStats.hasIssues}</div>
+          </button>
+
+          <button
+            onClick={() => setFilterStatus('EXCEL_MISSING')}
+            className={`p-4 rounded-2xl border text-left transition-all ${
+              filterStatus === 'EXCEL_MISSING'
+                ? 'ring-2 ring-red-500 shadow-md bg-red-50/50 dark:bg-red-950/30'
+                : 'hover:bg-black/5 dark:hover:bg-white/5'
+            }`}
+            style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}
+          >
+            <div className="text-xs font-semibold text-red-600 dark:text-red-400 mb-1 flex items-center gap-1">
+              <FileQuestion className="w-3.5 h-3.5" /> Excel Missing
+            </div>
+            <div className="text-2xl font-extrabold text-red-600 dark:text-red-400">{dashboardStats.excelMissing}</div>
+          </button>
+
+          <button
+            onClick={() => setFilterStatus('OCR_MISSING')}
+            className={`p-4 rounded-2xl border text-left transition-all col-span-2 sm:col-span-1 ${
+              filterStatus === 'OCR_MISSING'
+                ? 'ring-2 ring-rose-500 shadow-md bg-rose-50/50 dark:bg-rose-950/30'
+                : 'hover:bg-black/5 dark:hover:bg-white/5'
+            }`}
+            style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}
+          >
+            <div className="text-xs font-semibold text-rose-600 dark:text-rose-400 mb-1 flex items-center gap-1">
+              <ScanLine className="w-3.5 h-3.5" /> OCR Missing
+            </div>
+            <div className="text-2xl font-extrabold text-rose-600 dark:text-rose-400">{dashboardStats.ocrMissing}</div>
+          </button>
+        </div>
+
+        {/* Search, Filter & Sort Controls Bar */}
+        <div
+          className="p-4 rounded-2xl border shadow-sm mb-6 space-y-4 md:space-y-0 md:flex md:items-center md:justify-between gap-4"
+          style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}
+        >
+          {/* Search Box */}
+          <div className="relative flex-1 max-w-md">
+            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 opacity-50" style={{ color: 'var(--text-color)' }} />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by name, email, citizenship #, employee ID..."
+              className="w-full pl-10 pr-9 py-2 rounded-xl text-xs outline-none border transition-colors"
+              style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-color)', borderColor: 'var(--border-color)' }}
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 opacity-50 hover:opacity-100"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Filter Options */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1 text-xs font-semibold opacity-70 mr-1" style={{ color: 'var(--text-color)' }}>
+              <Filter className="w-3.5 h-3.5" /> Filter:
+            </div>
+
+            <button
+              onClick={() => setFilterStatus('ALL')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                filterStatus === 'ALL'
+                  ? 'bg-indigo-600 text-white border-indigo-600'
+                  : 'hover:bg-black/5 dark:hover:bg-white/5 opacity-80'
+              }`}
+              style={filterStatus !== 'ALL' ? { color: 'var(--text-color)', borderColor: 'var(--border-color)' } : {}}
+            >
+              All ({pendingUsers.length})
+            </button>
+
+            <button
+              onClick={() => setFilterStatus('NO_ISSUES')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                filterStatus === 'NO_ISSUES'
+                  ? 'bg-emerald-600 text-white border-emerald-600'
+                  : 'hover:bg-black/5 dark:hover:bg-white/5 opacity-80'
+              }`}
+              style={filterStatus !== 'NO_ISSUES' ? { color: 'var(--text-color)', borderColor: 'var(--border-color)' } : {}}
+            >
+              No Issues ({dashboardStats.noIssues})
+            </button>
+
+            <button
+              onClick={() => setFilterStatus('HAS_ISSUES')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                filterStatus === 'HAS_ISSUES'
+                  ? 'bg-amber-600 text-white border-amber-600'
+                  : 'hover:bg-black/5 dark:hover:bg-white/5 opacity-80'
+              }`}
+              style={filterStatus !== 'HAS_ISSUES' ? { color: 'var(--text-color)', borderColor: 'var(--border-color)' } : {}}
+            >
+              Has Issues ({dashboardStats.hasIssues})
+            </button>
+
+            <button
+              onClick={() => setFilterStatus('EXCEL_MISSING')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                filterStatus === 'EXCEL_MISSING'
+                  ? 'bg-red-600 text-white border-red-600'
+                  : 'hover:bg-black/5 dark:hover:bg-white/5 opacity-80'
+              }`}
+              style={filterStatus !== 'EXCEL_MISSING' ? { color: 'var(--text-color)', borderColor: 'var(--border-color)' } : {}}
+            >
+              Excel Missing ({dashboardStats.excelMissing})
+            </button>
+
+            <button
+              onClick={() => setFilterStatus('OCR_MISSING')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                filterStatus === 'OCR_MISSING'
+                  ? 'bg-rose-600 text-white border-rose-600'
+                  : 'hover:bg-black/5 dark:hover:bg-white/5 opacity-80'
+              }`}
+              style={filterStatus !== 'OCR_MISSING' ? { color: 'var(--text-color)', borderColor: 'var(--border-color)' } : {}}
+            >
+              OCR Missing ({dashboardStats.ocrMissing})
+            </button>
+
+            {/* Sort Dropdown */}
+            <div className="flex items-center gap-1.5 ml-2 border-l pl-3" style={{ borderColor: 'var(--border-color)' }}>
+              <SlidersHorizontal className="w-3.5 h-3.5 opacity-60" />
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="py-1.5 px-2 rounded-lg text-xs font-semibold outline-none border transition-colors cursor-pointer"
+                style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-color)', borderColor: 'var(--border-color)' }}
+              >
+                <option value="NAME_ASC">Name (A &rarr; Z)</option>
+                <option value="NAME_DESC">Name (Z &rarr; A)</option>
+                <option value="MATCHES_DESC">Matches (High &rarr; Low)</option>
+                <option value="MISMATCHES_DESC">Mismatches (High &rarr; Low)</option>
+                <option value="DATE_DESC">Date (Newest First)</option>
+              </select>
+            </div>
+
+            {(searchQuery || filterStatus !== 'ALL' || sortBy !== 'NAME_ASC') && (
+              <button
+                onClick={resetFilters}
+                className="p-1.5 rounded-lg border text-xs font-semibold hover:bg-black/5 dark:hover:bg-white/5 opacity-70 hover:opacity-100 flex items-center gap-1"
+                style={{ color: 'var(--text-color)', borderColor: 'var(--border-color)' }}
+                title="Reset all search, filter, and sort settings"
+              >
+                <RotateCcw className="w-3 h-3" /> Reset
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* Pending Users Table */}
         <div
           className="rounded-2xl border shadow-xl overflow-hidden"
           style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}
         >
           <div className="p-6 border-b flex justify-between items-center" style={{ borderColor: 'var(--border-color)' }}>
-            <h2 className="text-lg font-bold" style={{ color: 'var(--text-color)' }}>
-              Pending Voter Applications ({pendingUsers.length})
+            <h2 className="text-lg font-bold flex items-center gap-2" style={{ color: 'var(--text-color)' }}>
+              <span>Pending Voter Applications</span>
+              <span className="text-xs px-2.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 font-mono font-bold">
+                {processedUsers.length} of {pendingUsers.length}
+              </span>
             </h2>
             <button
               onClick={fetchPendingUsers}
@@ -178,52 +498,124 @@ const VerifierDashboard = () => {
               <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
               <p className="text-sm opacity-60">Loading pending applications...</p>
             </div>
-          ) : pendingUsers.length === 0 ? (
+          ) : processedUsers.length === 0 ? (
             <div className="p-12 text-center opacity-60">
-              <p className="text-sm">No pending voter applications for this election.</p>
+              <p className="text-sm">No voter applications match your search and filter criteria.</p>
+              {(searchQuery || filterStatus !== 'ALL') && (
+                <button
+                  onClick={resetFilters}
+                  className="mt-3 text-xs font-bold text-indigo-600 hover:underline"
+                >
+                  Clear filters & search
+                </button>
+              )}
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="text-xs uppercase tracking-wider opacity-60 border-b" style={{ borderColor: 'var(--border-color)', color: 'var(--text-color)' }}>
+                    <th className="p-4">Status Indicator</th>
                     <th className="p-4">Voter Name</th>
-                    <th className="p-4">Email</th>
-                    <th className="p-4">ID Number</th>
-                    <th className="p-4">Wallet Address</th>
-                    <th className="p-4">OCR Status</th>
+                    <th className="p-4">Citizenship / Emp ID</th>
+                    <th className="p-4">Verification Breakdown</th>
                     <th className="p-4 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y text-sm" style={{ borderColor: 'var(--border-color)' }}>
-                  {pendingUsers.map((u) => {
+                  {processedUsers.map((u) => {
                     const isOcrOpen = expandedOcrRow === u._id;
                     const ocr = u.ocrData;
+                    const ver = u.verification || {};
+                    const { excelFound, ocrFound, summary = {}, issues = [] } = ver;
+                    const cat = getVoterStatusCategory(u);
 
                     return (
                       <React.Fragment key={u._id}>
                         <tr className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
-                          <td className="p-4 font-bold" style={{ color: 'var(--text-color)' }}>{u.name}</td>
-                          <td className="p-4 opacity-80" style={{ color: 'var(--text-color)' }}>{u.email}</td>
-                          <td className="p-4 font-mono opacity-80" style={{ color: 'var(--text-color)' }}>{u.citizenshipNumber}</td>
-                          <td className="p-4 font-mono text-xs opacity-70" style={{ color: 'var(--text-color)' }}>
-                            {u.walletAddress ? `${u.walletAddress.slice(0, 6)}...${u.walletAddress.slice(-4)}` : 'Not linked'}
-                          </td>
-                          <td className="p-4">
-                            {ocr?.ocrSuccess ? (
-                              <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                                <ScanLine className="w-3 h-3" /> OCR Matched ({ocr.confidence}%)
+                          {/* Visual Status Indicator */}
+                          <td className="p-4 whitespace-nowrap">
+                            {cat === 'NO_ISSUES' && (
+                              <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2.5 py-1 rounded-full border border-emerald-200 dark:border-emerald-800">
+                                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                No Issues
                               </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                                Manual Review Required
+                            )}
+                            {cat === 'HAS_ISSUES' && (
+                              <span className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 px-2.5 py-1 rounded-full border border-amber-200 dark:border-amber-800">
+                                <span className="w-2 h-2 rounded-full bg-amber-500" />
+                                Has Issues ({issues.length})
+                              </span>
+                            )}
+                            {(cat === 'EXCEL_MISSING' || cat === 'OCR_MISSING' || cat === 'EXCEL_AND_OCR_MISSING') && (
+                              <span className="inline-flex items-center gap-1.5 text-xs font-bold text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/50 px-2.5 py-1 rounded-full border border-red-200 dark:border-red-800">
+                                <span className="w-2 h-2 rounded-full bg-red-500" />
+                                Missing Data
                               </span>
                             )}
                           </td>
-                          <td className="p-4 text-right space-x-2">
+
+                          {/* Voter Name & Email */}
+                          <td className="p-4">
+                            <div className="font-bold" style={{ color: 'var(--text-color)' }}>{u.name}</div>
+                            <div className="text-xs opacity-60 truncate max-w-xs">{u.email}</div>
+                          </td>
+
+                          {/* Citizenship & Employee ID */}
+                          <td className="p-4 font-mono text-xs">
+                            <div style={{ color: 'var(--text-color)' }}>{u.citizenshipNumber || '—'}</div>
+                            <div className="opacity-60">{u.employeeId ? `EMP: ${u.employeeId}` : 'No Emp ID'}</div>
+                          </td>
+
+                          {/* Verification Breakdown */}
+                          <td className="p-4">
+                            <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                              <span className={`px-1.5 py-0.5 rounded text-[11px] font-bold border ${
+                                excelFound
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800'
+                                  : 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-400 dark:border-red-800'
+                              }`}>
+                                Excel: {excelFound ? '✓' : '✗'}
+                              </span>
+
+                              <span className={`px-1.5 py-0.5 rounded text-[11px] font-bold border ${
+                                ocrFound
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800'
+                                  : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800'
+                              }`}>
+                                OCR: {ocrFound ? '✓' : '✗'}
+                              </span>
+
+                              <span className="px-1.5 py-0.5 rounded text-[11px] font-bold bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                                {summary.matches ?? 0} Match
+                              </span>
+
+                              {(summary.mismatches || 0) > 0 && (
+                                <span className="px-1.5 py-0.5 rounded text-[11px] font-bold bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800">
+                                  {summary.mismatches} Mismatch
+                                </span>
+                              )}
+
+                              {(summary.missing || 0) > 0 && (
+                                <span className="px-1.5 py-0.5 rounded text-[11px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                                  {summary.missing} Missing
+                                </span>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Action Buttons */}
+                          <td className="p-4 text-right space-x-2 whitespace-nowrap">
+                            <button
+                              onClick={() => setSelectedVoterForReview(u)}
+                              className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg transition-all inline-flex items-center gap-1 shadow-xs"
+                            >
+                              <Eye className="w-3.5 h-3.5" /> Review
+                            </button>
+
                             <button
                               onClick={() => setExpandedOcrRow(isOcrOpen ? null : u._id)}
-                              className="px-2.5 py-1 text-xs rounded border hover:bg-black/5 dark:hover:bg-white/5"
+                              className="px-2.5 py-1 text-xs rounded-lg border hover:bg-black/5 dark:hover:bg-white/5"
                               style={{ color: 'var(--text-color)', borderColor: 'var(--border-color)' }}
                             >
                               {isOcrOpen ? <ChevronUp className="w-3.5 h-3.5 inline" /> : <ChevronDown className="w-3.5 h-3.5 inline" />} OCR Info
@@ -232,7 +624,7 @@ const VerifierDashboard = () => {
                             <button
                               onClick={() => handleApprove(u._id, u.walletAddress)}
                               disabled={actionLoading || blockchainLoading || !u.walletAddress}
-                              className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded transition-all inline-flex items-center gap-1 disabled:opacity-50"
+                              className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg transition-all inline-flex items-center gap-1 disabled:opacity-50"
                               title={!u.walletAddress ? 'Voter has no linked wallet' : 'Approve via MetaMask'}
                             >
                               <CheckCircle className="w-3.5 h-3.5" /> Approve
@@ -241,7 +633,7 @@ const VerifierDashboard = () => {
                             <button
                               onClick={() => handleOpenRejectDialog(u._id)}
                               disabled={actionLoading}
-                              className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded transition-all inline-flex items-center gap-1 disabled:opacity-50"
+                              className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-lg transition-all inline-flex items-center gap-1 disabled:opacity-50"
                             >
                               <XCircle className="w-3.5 h-3.5" /> Reject
                             </button>
@@ -249,7 +641,7 @@ const VerifierDashboard = () => {
                             <button
                               onClick={() => handleOpenBlockDialog(u._id)}
                               disabled={actionLoading}
-                              className="px-3 py-1 bg-rose-700 hover:bg-rose-800 text-white font-bold text-xs rounded transition-all inline-flex items-center gap-1 disabled:opacity-50"
+                              className="px-3 py-1 bg-rose-700 hover:bg-rose-800 text-white font-bold text-xs rounded-lg transition-all inline-flex items-center gap-1 disabled:opacity-50"
                             >
                               <Ban className="w-3.5 h-3.5" /> Block
                             </button>
@@ -258,7 +650,7 @@ const VerifierDashboard = () => {
 
                         {isOcrOpen && (
                           <tr>
-                            <td colSpan={6} className="p-4 bg-black/5 dark:bg-white/5 border-b" style={{ borderColor: 'var(--border-color)' }}>
+                            <td colSpan={5} className="p-4 bg-black/5 dark:bg-white/5 border-b" style={{ borderColor: 'var(--border-color)' }}>
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
                                 <div>
                                   <h4 className="font-bold mb-2 text-indigo-600">User Provided Identity:</h4>
@@ -266,6 +658,7 @@ const VerifierDashboard = () => {
                                   <p><strong>DOB:</strong> {u.dob}</p>
                                   <p><strong>Address:</strong> {u.address}</p>
                                   <p><strong>Citizenship Number:</strong> {u.citizenshipNumber}</p>
+                                  <p><strong>Employee ID:</strong> {u.employeeId || 'N/A'}</p>
                                 </div>
 
                                 <div>
@@ -320,6 +713,27 @@ const VerifierDashboard = () => {
           message="They will no longer be able to participate in this election until unblocked."
           danger
           confirmText="Block"
+        />
+
+        {/* Verification Review Modal / Drawer */}
+        <VerificationReviewModal
+          isOpen={!!selectedVoterForReview}
+          onClose={() => setSelectedVoterForReview(null)}
+          voter={selectedVoterForReview}
+          onApprove={(userId, walletAddress) => {
+            setSelectedVoterForReview(null);
+            handleApprove(userId, walletAddress);
+          }}
+          onReject={(userId) => {
+            setSelectedVoterForReview(null);
+            handleOpenRejectDialog(userId);
+          }}
+          onBlock={(userId) => {
+            setSelectedVoterForReview(null);
+            handleOpenBlockDialog(userId);
+          }}
+          actionLoading={actionLoading}
+          blockchainLoading={blockchainLoading}
         />
       </main>
     </div>

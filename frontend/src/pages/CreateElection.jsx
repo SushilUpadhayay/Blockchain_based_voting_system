@@ -40,7 +40,7 @@ const CreateElection = () => {
     votingEndDate: '',
   });
 
-  // Step 2: Super Admin Identity
+  // Step 2: Election Administrator Identity
   const [identity, setIdentity] = useState({
     name: '',
     email: '',
@@ -242,7 +242,7 @@ const CreateElection = () => {
         {/* Multi-step Header & Stepper */}
         <div className="mb-8">
           <h1 className="text-3xl font-extrabold mb-2" style={{ color: 'var(--text-color)' }}>
-            Super Admin Onboarding Wizard
+            Election Administrator Onboarding Wizard
           </h1>
           <p className="text-sm opacity-70 mb-6" style={{ color: 'var(--text-color)' }}>
             Set up your election details, verify your identity & wallet, and deploy to the blockchain.
@@ -354,11 +354,11 @@ const CreateElection = () => {
             </form>
           )}
 
-          {/* ── STEP 2: Super Admin Identity ─────────────────────────────── */}
+          {/* ── STEP 2: Election Administrator Identity ─────────────────────────────── */}
           {step === STEPS.IDENTITY && (
             <form onSubmit={handleStep2Next} className="space-y-5">
               <h2 className="text-xl font-bold pb-2 border-b" style={{ color: 'var(--text-color)', borderColor: 'var(--border-color)' }}>
-                Step 2 — Super Admin Credentials
+                Step 2 — Election Administrator Credentials
               </h2>
 
               <div>
@@ -461,7 +461,7 @@ const CreateElection = () => {
               </h2>
 
               <p className="text-sm opacity-70 max-w-md mx-auto" style={{ color: 'var(--text-color)' }}>
-                Connect your Web3 wallet and sign the verification challenge. This wallet address will become the on-chain Super Admin for <strong>{electionDetails.title}</strong>.
+                Connect your Web3 wallet and sign the verification challenge. This wallet address will become the on-chain Election Administrator for <strong>{electionDetails.title}</strong>.
               </p>
 
               {submitting ? (

@@ -75,7 +75,7 @@ function AppContent() {
             }
           />
 
-          {/* Super Admin Setup Checklist (per election) */}
+          {/* Election Administrator Setup Checklist (per election) */}
           <Route
             path="/elections/:electionId/setup"
             element={
@@ -85,7 +85,7 @@ function AppContent() {
             }
           />
 
-          {/* Super Admin Dashboard (per election) */}
+          {/* Election Administrator Dashboard (per election) */}
           <Route
             path="/elections/:electionId/admin"
             element={
