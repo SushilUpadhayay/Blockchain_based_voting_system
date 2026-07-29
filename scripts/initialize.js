@@ -34,13 +34,9 @@ async function main() {
   const Voting = await hre.ethers.getContractFactory("Voting");
   const voting = Voting.attach(address);
 
-  // ── Guard: skip if election already started ──
-  const [, started] = await voting.getElectionStatus();
-  if (started) {
-    console.log("\n⚠️  Election already started — skipping initialization.");
-    console.log("   Deploy a fresh contract if you need to re-initialize.\n");
-    return;
-  }
+  // ── Verify contract is reachable ──
+  const count = await voting.getElectionCount();
+  console.log(`\nElection count: ${count.toString()} (fresh contract)`);
 
   // ── No auto-initialization ──
   console.log("\n" + "=".repeat(50));

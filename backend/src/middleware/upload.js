@@ -8,10 +8,16 @@ if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-// Ensure uploads/candidates directory exists
+// Ensure candidate upload directory exists
 const candidateUploadDir = path.join(uploadDir, 'candidates');
 if (!fs.existsSync(candidateUploadDir)) {
   fs.mkdirSync(candidateUploadDir, { recursive: true });
+}
+
+// Ensure rosters upload directory exists
+const rosterUploadDir = path.join(uploadDir, 'rosters');
+if (!fs.existsSync(rosterUploadDir)) {
+  fs.mkdirSync(rosterUploadDir, { recursive: true });
 }
 
 const storage = multer.diskStorage({
@@ -74,4 +80,26 @@ const uploadCandidatePhoto = multer({
   },
 }).single('photo');
 
-module.exports = { upload, uploadCitizenship, uploadCandidatePhoto };
+// For Excel voter roster upload — stored in uploads/rosters/ subfolder
+const rosterStorage = multer.diskStorage({
+  destination(req, file, cb) {
+    cb(null, rosterUploadDir);
+  },
+  filename(req, file, cb) {
+    cb(null, `roster-${Date.now()}${path.extname(file.originalname)}`);
+  },
+});
+
+const uploadRosterExcel = multer({
+  storage: rosterStorage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB limit
+  fileFilter(req, file, cb) {
+    const allowed = /xlsx|xls/;
+    const ext = allowed.test(path.extname(file.originalname).toLowerCase());
+    if (ext) return cb(null, true);
+    cb(new Error('Voter roster must be an Excel file (.xlsx or .xls).'));
+  },
+}).single('rosterFile');
+
+module.exports = { upload, uploadCitizenship, uploadCandidatePhoto, uploadRosterExcel };
+

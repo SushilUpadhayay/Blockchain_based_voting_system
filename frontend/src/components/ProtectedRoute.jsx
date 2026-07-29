@@ -1,5 +1,5 @@
 import React from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ROUTES, USER_STATUS } from '../constants';
 
@@ -12,6 +12,7 @@ import { ROUTES, USER_STATUS } from '../constants';
  */
 const ProtectedRoute = ({ children, uploadOnly = false, registeredOnly = false }) => {
   const { user, isAuthenticated, loading } = useAuth();
+  const { electionId } = useParams();
 
   if (loading) {
     return (
@@ -32,13 +33,22 @@ const ProtectedRoute = ({ children, uploadOnly = false, registeredOnly = false }
   }
 
   // Upload route guard — only pending users should be here.
-  if (uploadOnly && user.status !== USER_STATUS.PENDING) {
+  if (uploadOnly && !((user.elections || []).some((entry) => entry.status === USER_STATUS.PENDING) || user.status === USER_STATUS.PENDING)) {
     return <Navigate to={ROUTES.DASHBOARD} replace />;
   }
 
   // Registered route guard - only fully registered users can access (e.g. /voting)
-  if (registeredOnly && user.status !== USER_STATUS.REGISTERED) {
-    return <Navigate to={ROUTES.DASHBOARD} replace />;
+  if (registeredOnly) {
+    const routeElectionId = electionId ? Number(electionId) : null;
+    const isRegisteredForElection = routeElectionId
+      ? (user.elections || []).some(
+        (entry) => Number(entry.electionId) === routeElectionId && entry.status === USER_STATUS.REGISTERED
+      )
+      : user.status === USER_STATUS.REGISTERED;
+
+    if (!isRegisteredForElection) {
+      return <Navigate to={ROUTES.DASHBOARD} replace />;
+    }
   }
 
   return children;

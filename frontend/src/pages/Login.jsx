@@ -1,72 +1,71 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link, Navigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { ShieldCheck, Lock, KeyRound, Mail, UserCheck } from 'lucide-react';
 import API from '../api/api';
 import { useAuth } from '../context/AuthContext';
 import { ROUTES } from '../constants';
+import Navbar from '../components/Navbar';
+
+const LOGIN_MODE = {
+  VOTER: 'voter',
+  ADMIN: 'admin',
+};
 
 const Login = () => {
   const navigate = useNavigate();
   const { isAuthenticated, user } = useAuth();
+
+  const [mode, setMode] = useState(LOGIN_MODE.VOTER);
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  // cooldown: seconds remaining before next OTP can be requested (60s cooldown after 3rd request)
+
+  // Cooldown & Lockout states
   const [cooldown, setCooldown] = useState(0);
-  // lockout: seconds remaining for a 30-minute lockout (after 5 requests)
   const [lockout, setLockout] = useState(0);
 
-  // Live countdown for cooldown timer
+  // Live countdown timers
   useEffect(() => {
     if (cooldown <= 0) return;
-    const timer = setInterval(() => {
-      setCooldown((prev) => (prev > 1 ? prev - 1 : 0));
-    }, 1000);
+    const timer = setInterval(() => setCooldown((prev) => (prev > 1 ? prev - 1 : 0)), 1000);
     return () => clearInterval(timer);
   }, [cooldown]);
 
-  // Live countdown for lockout timer
   useEffect(() => {
     if (lockout <= 0) return;
-    const timer = setInterval(() => {
-      setLockout((prev) => (prev > 1 ? prev - 1 : 0));
-    }, 1000);
+    const timer = setInterval(() => setLockout((prev) => (prev > 1 ? prev - 1 : 0)), 1000);
     return () => clearInterval(timer);
   }, [lockout]);
 
-  // If already logged in, redirect to the appropriate dashboard
+  // If already authenticated and verified, redirect to role-specific dashboard
   if (isAuthenticated && user?.isVerified) {
-    return <Navigate to={user.role === 'admin' ? ROUTES.ADMIN : ROUTES.DASHBOARD} replace />;
+    if (user.role === 'admin') {
+      const firstAdminRole = user.adminRoles?.[0];
+      const targetId = firstAdminRole?.electionId || 1;
+      const targetPath = firstAdminRole?.role === 'verifier' ? `/elections/${targetId}/verifier` : `/elections/${targetId}/admin`;
+      return <Navigate to={targetPath} replace />;
+    }
+    return <Navigate to={ROUTES.DASHBOARD} replace />;
   }
 
   const isBlocked = lockout > 0;
   const isOnCooldown = cooldown > 0;
 
-  const handleSubmit = async (e) => {
+  const handleVoterLogin = async (e) => {
     e.preventDefault();
-
-    // Block action client-side if still locked out or on cooldown
-    if (isBlocked) {
-      const mins = Math.ceil(lockout / 60);
-      toast.error(`Account locked. Please try again in ${mins} minute${mins !== 1 ? 's' : ''}.`);
-      return;
-    }
-    if (isOnCooldown) {
-      toast.error(`Please wait ${cooldown}s before requesting a new OTP.`);
-      return;
-    }
+    if (isBlocked) return toast.error('Account locked. Please try again later.');
+    if (isOnCooldown) return toast.error(`Please wait ${cooldown}s before requesting a new OTP.`);
 
     setLoading(true);
     try {
-      // Step 1: Check rate-limit FIRST by calling the backend
-      const response = await API.post('/auth/login', { email });
+      const response = await API.post('/auth/login', { email: email.trim().toLowerCase() });
       const { requireSignature, walletAddress, signMessage, cooldownSeconds } = response.data;
 
-      // Backend approved the request — update cooldown if it starts now
       if (cooldownSeconds && cooldownSeconds > 0) {
         setCooldown(cooldownSeconds);
       }
 
-      // Step 2: ONLY open MetaMask AFTER backend approved the OTP request
       let signature = null;
       let message = null;
 
@@ -83,63 +82,74 @@ const Login = () => {
 
         if (currentWallet.toLowerCase() !== walletAddress.toLowerCase()) {
           try {
-            toast.loading('Wallet mismatch. Opening MetaMask account selector...', { id: 'login-wallet' });
+            toast.loading('Wallet mismatch. Opening account selector...', { id: 'login-wallet' });
             await window.ethereum.request({
               method: 'wallet_requestPermissions',
-              params: [{ eth_accounts: {} }]
+              params: [{ eth_accounts: {} }],
             });
             const accountsAfter = await window.ethereum.request({ method: 'eth_accounts' });
-            const newWallet = accountsAfter[0];
-            if (newWallet.toLowerCase() !== walletAddress.toLowerCase()) {
+            currentWallet = accountsAfter[0];
+
+            if (currentWallet.toLowerCase() !== walletAddress.toLowerCase()) {
               toast.error(
-                `Connected wallet does not match registered wallet.\nExpected: ${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}\nGot: ${newWallet.slice(0, 6)}...${newWallet.slice(-4)}`,
-                { id: 'login-wallet', duration: 8000 }
+                `Wallet mismatch. Registered: ${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`,
+                { id: 'login-wallet', duration: 6000 }
               );
               setLoading(false);
               return;
             }
-            currentWallet = newWallet;
           } catch {
-            toast.error(
-              `Connected wallet does not match registered wallet.\nExpected: ${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}\nGot: ${currentWallet.slice(0, 6)}...${currentWallet.slice(-4)}`,
-              { id: 'login-wallet', duration: 8000 }
-            );
+            toast.error('Connected wallet does not match registered account.', { id: 'login-wallet' });
             setLoading(false);
             return;
           }
         }
 
-        toast.loading('Please sign the verification challenge in MetaMask...', { id: 'login-wallet' });
+        toast.loading('Please sign the challenge in MetaMask...', { id: 'login-wallet' });
         signature = await window.ethereum.request({
           method: 'personal_sign',
-          params: [signMessage, currentWallet]
+          params: [signMessage, currentWallet],
         });
         message = signMessage;
-        toast.success('Wallet signature acquired successfully!', { id: 'login-wallet' });
+        toast.success('Wallet signature verified!', { id: 'login-wallet' });
       }
 
       toast.success('OTP sent to your email!', { id: 'login-wallet' });
-      navigate(ROUTES.VERIFY_OTP, { state: { email, signature, message } });
-
+      navigate(ROUTES.VERIFY_OTP, { state: { email: email.trim().toLowerCase(), signature, message } });
     } catch (error) {
-      console.error('Login Error:', error);
+      console.error('Voter login error:', error);
       const data = error.response?.data || {};
-      const remaining = data.remainingSeconds;
-
-      // Detect lockout (30 min) vs cooldown (60s) from backend
-      if (remaining && typeof remaining === 'number') {
-        if (remaining > 120) {
-          // > 2 minutes = lockout
-          setLockout(remaining);
-          toast.error(data.message || 'Account locked out. Too many OTP requests.');
-        } else {
-          // ≤ 120 seconds = short cooldown
-          setCooldown(remaining);
-          toast.error(data.message || `Please wait ${remaining}s before requesting a new OTP.`);
-        }
-      } else {
-        toast.error(data.message || 'Login failed. Please check your email and try again.', { id: 'login-wallet' });
+      if (data.remainingSeconds) {
+        if (data.remainingSeconds > 120) setLockout(data.remainingSeconds);
+        else setCooldown(data.remainingSeconds);
       }
+      toast.error(data.message || 'Login failed. Please check your email.', { id: 'login-wallet' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAdminLogin = async (e) => {
+    e.preventDefault();
+    if (!email.trim() || !password) return toast.error('Email and password are required.');
+
+    setLoading(true);
+    try {
+      const response = await API.post('/auth/admin-login', {
+        email: email.trim().toLowerCase(),
+        password,
+      });
+
+      if (response.data.cooldownSeconds) {
+        setCooldown(response.data.cooldownSeconds);
+      }
+
+      toast.success('Password verified! OTP sent to your email.');
+      // Admin login reuses the existing verify-otp route and page seamlessly!
+      navigate(ROUTES.VERIFY_OTP, { state: { email: email.trim().toLowerCase() } });
+    } catch (error) {
+      console.error('Admin login error:', error);
+      toast.error(error.response?.data?.message || 'Invalid email or password.');
     } finally {
       setLoading(false);
     }
@@ -152,60 +162,117 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6 transition-colors duration-300" style={{ backgroundColor: 'var(--bg-color)' }}>
-      <div className="max-w-md w-full p-8 rounded-xl shadow-md border transition-colors duration-300" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
-        <h2 className="text-2xl font-bold mb-6 text-center" style={{ color: 'var(--text-color)' }}>Log in</h2>
-        <p className="mb-6 text-center text-sm opacity-70" style={{ color: 'var(--text-color)' }}>
-          Enter your registered email to receive a secure one-time code.
-        </p>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-color)' }}>Email</label>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-2 rounded-lg outline-none transition-colors border"
-              style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-color)', borderColor: 'var(--border-color)' }}
-              placeholder="john@example.com"
-              autoFocus
-            />
+    <div className="min-h-screen flex flex-col transition-colors duration-300" style={{ backgroundColor: 'var(--bg-color)' }}>
+      <Navbar />
+
+      <main className="flex-1 flex items-center justify-center p-6">
+        <div className="max-w-md w-full p-8 rounded-2xl shadow-xl border transition-colors duration-300" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
+          
+          {/* Mode Toggle Tabs */}
+          <div className="flex rounded-xl p-1 mb-6 bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5">
+            <button
+              onClick={() => setMode(LOGIN_MODE.VOTER)}
+              className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                mode === LOGIN_MODE.VOTER ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'opacity-60'
+              }`}
+              style={{ color: mode === LOGIN_MODE.VOTER ? undefined : 'var(--text-color)' }}
+            >
+              <UserCheck className="w-4 h-4" /> Voter Login
+            </button>
+            <button
+              onClick={() => setMode(LOGIN_MODE.ADMIN)}
+              className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                mode === LOGIN_MODE.ADMIN ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'opacity-60'
+              }`}
+              style={{ color: mode === LOGIN_MODE.ADMIN ? undefined : 'var(--text-color)' }}
+            >
+              <ShieldCheck className="w-4 h-4" /> Admin / Verifier
+            </button>
           </div>
 
-          {isBlocked && (
-            <div className="p-3 bg-red-50 border border-red-200 text-red-800 text-sm rounded-lg text-center font-medium">
-              🔒 Account locked. Try again in <strong>{formatTime(lockout)}</strong>.
-            </div>
+          <h2 className="text-2xl font-bold mb-1 text-center" style={{ color: 'var(--text-color)' }}>
+            {mode === LOGIN_MODE.VOTER ? 'Voter Sign In' : 'Admin & Verifier Sign In'}
+          </h2>
+          <p className="mb-6 text-center text-xs opacity-70" style={{ color: 'var(--text-color)' }}>
+            {mode === LOGIN_MODE.VOTER
+              ? 'Enter your registered email address to receive a 6-digit OTP code.'
+              : 'Enter your administrator/verifier email and password.'}
+          </p>
+
+          {/* Voter Login Form */}
+          {mode === LOGIN_MODE.VOTER && (
+            <form onSubmit={handleVoterLogin} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold mb-1.5" style={{ color: 'var(--text-color)' }}>
+                  Email Address
+                </label>
+                <input
+                  type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl outline-none text-sm border"
+                  style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-color)', borderColor: 'var(--border-color)' }}
+                  placeholder="voter@example.com" autoFocus
+                />
+              </div>
+
+              {isBlocked && (
+                <div className="p-3 bg-red-50 border border-red-200 text-red-800 text-xs rounded-xl text-center font-medium">
+                  🔒 Account locked. Try again in <strong>{formatTime(lockout)}</strong>.
+                </div>
+              )}
+
+              {!isBlocked && isOnCooldown && (
+                <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-xl text-center font-medium">
+                  Please wait <strong>{cooldown}s</strong> before requesting a new OTP.
+                </div>
+              )}
+
+              <button
+                type="submit" disabled={loading || isBlocked || isOnCooldown || !email.trim()}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold py-3 rounded-xl text-sm transition-all shadow-md mt-4"
+              >
+                {loading ? 'Sending OTP...' : 'Send OTP & Proceed'}
+              </button>
+            </form>
           )}
 
-          {!isBlocked && isOnCooldown && (
-            <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg text-center font-medium">
-              Please wait <strong>{cooldown}s</strong> before requesting a new OTP.
-            </div>
+          {/* Admin / Verifier Login Form */}
+          {mode === LOGIN_MODE.ADMIN && (
+            <form onSubmit={handleAdminLogin} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold mb-1.5" style={{ color: 'var(--text-color)' }}>
+                  Email Address
+                </label>
+                <input
+                  type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl outline-none text-sm border"
+                  style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-color)', borderColor: 'var(--border-color)' }}
+                  placeholder="admin@organization.org" autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold mb-1.5" style={{ color: 'var(--text-color)' }}>
+                  Password
+                </label>
+                <input
+                  type="password" required value={password} onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl outline-none text-sm border"
+                  style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-color)', borderColor: 'var(--border-color)' }}
+                  placeholder="Enter your password"
+                />
+              </div>
+
+              <button
+                type="submit" disabled={loading || !email.trim() || !password}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold py-3 rounded-xl text-sm transition-all shadow-md mt-4"
+              >
+                {loading ? 'Verifying Password...' : 'Verify Password & Send OTP'}
+              </button>
+            </form>
           )}
 
-          <button
-            type="submit"
-            disabled={loading || isBlocked || isOnCooldown}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg transition-colors flex justify-center items-center mt-6"
-          >
-            {loading ? (
-              <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            ) : isBlocked ? (
-              `Locked — ${formatTime(lockout)}`
-            ) : isOnCooldown ? (
-              `Please wait ${cooldown}s`
-            ) : (
-              'Send OTP'
-            )}
-          </button>
-        </form>
-        <p className="mt-6 text-center text-sm opacity-70" style={{ color: 'var(--text-color)' }}>
-          Don't have an account?{' '}
-          <Link to={ROUTES.REGISTER} className="text-blue-600 font-medium hover:underline">Register</Link>
-        </p>
-      </div>
+        </div>
+      </main>
     </div>
   );
 };

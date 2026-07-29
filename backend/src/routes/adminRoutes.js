@@ -1,26 +1,22 @@
 const express = require('express');
 const router = express.Router();
-const { getPendingUsers, approveUser, rejectUser, blockUser, startElection, endElection, addCandidate, getCandidatesMeta, getRegisteredUsers, syncVoter } = require('../controllers/adminController');
 const { protect } = require('../middleware/auth');
-const { admin } = require('../middleware/admin');
-const { uploadCandidatePhoto } = require('../middleware/upload');
+const { isRegistrationVerifier } = require('../middleware/electionRole');
 const {
-  validateMongoIdParam,
-  validateRejectUser,
-  validateAddCandidate
-} = require('../middleware/validator');
+  getPendingUsers,
+  approveUser,
+  rejectUser,
+  blockUser,
+  getRegisteredUsers,
+  syncVoter,
+} = require('../controllers/adminController');
 
-router.use(protect, admin);
+router.get('/elections/:electionId/pending-users', protect, isRegistrationVerifier, getPendingUsers);
+router.post('/elections/:electionId/approve/:id', protect, isRegistrationVerifier, approveUser);
+router.post('/elections/:electionId/reject/:id', protect, isRegistrationVerifier, rejectUser);
+router.post('/elections/:electionId/block/:id', protect, isRegistrationVerifier, blockUser);
 
-router.get('/pending-users', getPendingUsers);
-router.post('/approve/:id', validateMongoIdParam, approveUser);
-router.post('/reject/:id', validateRejectUser, rejectUser);
-router.post('/block/:id', validateMongoIdParam, blockUser);
-router.post('/start-election', startElection);
-router.post('/end-election', endElection);
-router.post('/add-candidate', uploadCandidatePhoto, validateAddCandidate, addCandidate);
-router.get('/candidates-meta', getCandidatesMeta);
-router.get('/registered-users', getRegisteredUsers);
-router.post('/sync-voter/:id', validateMongoIdParam, syncVoter);
+router.get('/elections/:electionId/registered-users', protect, isRegistrationVerifier, getRegisteredUsers);
+router.post('/elections/:electionId/sync-voter/:id', protect, isRegistrationVerifier, syncVoter);
 
 module.exports = router;

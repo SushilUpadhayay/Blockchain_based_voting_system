@@ -13,19 +13,24 @@ export const ROUTES = {
   VERIFY_OTP: '/verify-otp',
   UPLOAD: '/upload',
   DASHBOARD: '/dashboard',
-  VOTING: '/voting',
+  ELECTIONS: '/elections',
+  CREATE_ELECTION: '/elections/create',
+  ELECTION_ADMIN: '/elections/:electionId/admin',
+  ELECTION_VERIFIER: '/elections/:electionId/verifier',
+  VOTING: '/elections/:electionId/voting',
+  RESULTS: '/elections/:electionId/results',
   ADMIN: '/admin',
 };
 
 export const DASHBOARD_CONFIG = {
   ADMIN: {
-    to: ROUTES.ADMIN,
-    label: 'ADMIN PANEL',
+    to: ROUTES.ELECTIONS,
+    label: 'ELECTION PORTAL',
     className: 'text-sm font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100 hover:bg-blue-100 transition-all',
   },
   VOTING: {
-    to: ROUTES.VOTING,
-    label: 'VOTING DASHBOARD',
+    to: ROUTES.ELECTIONS,
+    label: 'ELECTION PORTAL',
     className: 'text-sm font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100 hover:bg-emerald-100 transition-all',
   },
   STATUS: {
@@ -36,11 +41,9 @@ export const DASHBOARD_CONFIG = {
 };
 
 export const getDashboardConfig = (user) => {
-  if (user?.role === 'admin') {
+  if (user?.role === 'admin' || user?.status === USER_STATUS.REGISTERED) {
     return DASHBOARD_CONFIG.ADMIN;
-  }
-  if (user?.status === USER_STATUS.REGISTERED) {
-    return DASHBOARD_CONFIG.VOTING;
   }
   return DASHBOARD_CONFIG.STATUS;
 };
+

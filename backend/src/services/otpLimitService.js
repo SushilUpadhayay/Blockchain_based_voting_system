@@ -21,7 +21,8 @@ const OtpLimit = require('../models/OtpLimit');
  *   #6 → REJECTED, 30-minute lockout triggered
  *
  * @param {string} email - User's email.
- * @param {string} purpose - 'registration', 'login', or 'voting'.
+ * @param {string} purpose - 'login', 'superadmin_registration',
+ *   'registration_<electionId>', 'verifier_registration_<electionId>', or 'voting_<electionId>'.
  * @returns {Promise<{ allowed: boolean, remainingSeconds?: number, errorType?: 'lockout' | 'cooldown', nextCooldownSeconds?: number }>}
  */
 const checkAndRecordOtpRequest = async (email, purpose) => {

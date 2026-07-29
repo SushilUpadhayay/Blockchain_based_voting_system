@@ -11,7 +11,14 @@ const otpLimitSchema = new mongoose.Schema(
     purpose: {
       type: String,
       required: true,
-      enum: ['registration', 'login', 'voting'],
+      validate: {
+        validator: (v) =>
+          ['login', 'superadmin_registration'].includes(v) ||
+          /^registration_\d+$/.test(v) ||
+          /^verifier_registration_\d+$/.test(v) ||
+          /^voting_\d+$/.test(v),
+        message: (props) => `'${props.value}' is not a valid OTP purpose`,
+      },
     },
     requestTimestamps: {
       type: [Date],

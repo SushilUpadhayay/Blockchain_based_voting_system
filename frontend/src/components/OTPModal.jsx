@@ -11,7 +11,17 @@ import API from '../api/api';
  *   onVerified — callback called on successful OTP verification
  *   purpose   — 'voting' (default) — determines which endpoint is used
  */
-const OTPModal = ({ isOpen, onClose, onVerified, purpose = 'voting' }) => {
+/**
+ * OTPModal — used for the voting OTP verification flow.
+ *
+ * Props:
+ *   isOpen     — whether the modal is visible
+ *   onClose    — callback to close the modal
+ *   onVerified — callback called on successful OTP verification
+ *   electionId — target election ID
+ *   purpose    — 'voting' (default) — determines which endpoint is used
+ */
+const OTPModal = ({ isOpen, onClose, onVerified, electionId, purpose = 'voting' }) => {
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [requesting, setRequesting] = useState(false);
@@ -25,8 +35,6 @@ const OTPModal = ({ isOpen, onClose, onVerified, purpose = 'voting' }) => {
   }, [isOpen]);
 
   const handleRequestOTP = async () => {
-    // This modal is currently only used for voting OTP.
-    // The voting OTP endpoint requires an authenticated user (JWT in header).
     if (purpose !== 'voting') {
       console.warn('[OTPModal] Only "voting" purpose is supported in this modal.');
       return;
@@ -34,7 +42,7 @@ const OTPModal = ({ isOpen, onClose, onVerified, purpose = 'voting' }) => {
 
     setRequesting(true);
     try {
-      await API.post('/auth/request-vote-otp');
+      await API.post('/auth/request-vote-otp', { electionId });
       toast.success('Voting OTP sent to your registered email.');
     } catch (error) {
       console.error('OTP Request Error:', error);
@@ -53,7 +61,7 @@ const OTPModal = ({ isOpen, onClose, onVerified, purpose = 'voting' }) => {
 
     setLoading(true);
     try {
-      await API.post('/auth/verify-vote-otp', { otp });
+      await API.post('/auth/verify-vote-otp', { electionId, otp });
       toast.success('OTP verified successfully!');
       onVerified();
       onClose();
@@ -64,6 +72,7 @@ const OTPModal = ({ isOpen, onClose, onVerified, purpose = 'voting' }) => {
       setLoading(false);
     }
   };
+
 
   if (!isOpen) return null;
 

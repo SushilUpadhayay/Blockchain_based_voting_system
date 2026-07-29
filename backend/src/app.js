@@ -6,6 +6,7 @@ const { errorHandler } = require('./middleware/errorHandler');
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const electionRoutes = require('./routes/electionRoutes');
 
 const app = express();
 
@@ -42,8 +43,10 @@ app.use('/uploads', express.static('uploads'));
 app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/elections', electionRoutes);
 
 // ── Error Handler ─────────────────────────────────────────────────────────────
 app.use(errorHandler);
 
 module.exports = app;
+
