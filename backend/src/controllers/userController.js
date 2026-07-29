@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const { extractCitizenshipData } = require('../services/ocrService');
 const { sendStatusNotificationEmail } = require('../services/otpService');
+const { getRelevantRegistration, serializeSessionUserWithVerifierContacts } = require('../utils/userResponse');
 
 // @desc    Upload citizenship front & back images, run OCR on back side
 // @route   POST /api/user/upload-document
@@ -28,10 +29,11 @@ const uploadDocument = async (req, res, next) => {
       throw new Error('User not found');
     }
 
-    if (user.status !== 'pending') {
+    const pendingRegistration = (user.elections || []).find((entry) => entry.status === 'pending');
+    if (user.role !== 'user' || !pendingRegistration) {
       res.status(400);
       throw new Error(
-        `Cannot upload document. Current status: ${user.status}. Only pending users can upload.`
+        'Cannot upload document. Citizenship upload is only required for voters with a pending election registration.'
       );
     }
 
@@ -78,14 +80,15 @@ const uploadDocument = async (req, res, next) => {
 
     await user.save();
 
-    // Send "Registration Submitted" status email automatically
+    // Notify voters that their registration is awaiting verifier review.
     sendStatusNotificationEmail(user, 'pending').catch(err => {
       console.error('Failed to send pending status notification email:', err);
     });
 
     res.json({
       message: 'Citizenship documents uploaded successfully. Your application is under review.',
-      status:  user.status,
+      status: getRelevantRegistration(user, pendingRegistration?.electionId)?.status || null,
+      electionId: pendingRegistration?.electionId || null,
       ocrSuccess: user.ocrData.ocrSuccess,
     });
   } catch (error) {
@@ -113,15 +116,7 @@ const getProfile = async (req, res, next) => {
     const user = await User.findById(req.user._id);
 
     if (user) {
-      res.json({
-        _id:           user._id,
-        name:          user.name,
-        email:         user.email,
-        idNumber:      user.idNumber,
-        status:        user.status,
-        walletAddress: user.walletAddress,
-        role:          user.role,
-      });
+      res.json(await serializeSessionUserWithVerifierContacts(user));
     } else {
       res.status(404);
       throw new Error('User not found');

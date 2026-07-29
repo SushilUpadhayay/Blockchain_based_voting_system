@@ -1,12 +1,13 @@
 import React from 'react';
 import { useVoting } from '../context/VotingContext';
 import { User, CheckCircle2 } from 'lucide-react';
+import { getAssetUrl } from '../utils/assetUrl';
 
-const CandidateCard = ({ candidate }) => {
-  const { vote, hasVoted, electionStatus, isLoading, currentAccount, candidates } = useVoting();
+const CandidateCard = ({ candidate, onVote }) => {
+  const { hasVoted, electionStatus, isLoading, currentAccount, candidates } = useVoting();
 
   const handleVote = () => {
-    vote(candidate.id);
+    onVote?.();
   };
 
   const isVotingDisabled = !electionStatus.active || hasVoted || isLoading || !currentAccount;
@@ -26,7 +27,7 @@ const CandidateCard = ({ candidate }) => {
       {/* Candidate Photo / Avatar */}
       {candidate.photoPath ? (
         <img
-          src={`http://localhost:5000${candidate.photoPath}`}
+          src={getAssetUrl(candidate.photoPath)}
           alt={candidate.name}
           className={`w-20 h-20 rounded-full object-cover mb-3 border-2 shadow-md ${isLeading && electionStatus.active ? 'border-blue-500 shadow-blue-200' : 'border-gray-200'}`}
         />

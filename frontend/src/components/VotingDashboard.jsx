@@ -1,12 +1,20 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useVoting } from '../context/VotingContext';
 import CandidateCard from './CandidateCard';
-import { Wallet, RefreshCw, AlertTriangle, ServerCrash, LogOut, Trophy } from 'lucide-react';
+import {
+  Wallet, RefreshCw, AlertTriangle, ServerCrash,
+  LogOut, Trophy, ArrowLeft,
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
 import { ROUTES } from '../constants';
+import { getAssetUrl } from '../utils/assetUrl';
 
 const VotingDashboard = () => {
+  const { electionId: routeElectionId } = useParams();
+  const electionId = Number(routeElectionId || 1);
+  const navigate = useNavigate();
+
   const {
     currentAccount,
     connectWallet,
@@ -20,9 +28,16 @@ const VotingDashboard = () => {
     REQUIRED_CHAIN_ID,
     RPC_URL,
     winner,
+    vote,
   } = useVoting();
   const { logout } = useAuth();
-  const navigate = useNavigate();
+
+  // Reload election-specific data when electionId or wallet changes
+  useEffect(() => {
+    if (currentAccount) {
+      loadInitialData(currentAccount, electionId);
+    }
+  }, [currentAccount, electionId]);
 
   const electionEnded = electionStatus.started && !electionStatus.active;
   const totalVotes = candidates.reduce((sum, c) => sum + Number(c.voteCount), 0);
@@ -68,11 +83,24 @@ const VotingDashboard = () => {
       {/* ── Main ── */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-6 lg:p-8">
 
+        {/* Back to Portal */}
+        <button
+          onClick={() => navigate('/elections')}
+          className="inline-flex items-center gap-2 text-sm font-medium mb-6 opacity-70 hover:opacity-100 transition-opacity"
+          style={{ color: 'var(--text-color)' }}
+        >
+          <ArrowLeft className="w-4 h-4" /> Back to Election Portal
+        </button>
+
         {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
           <div>
-            <h1 className="text-3xl font-bold mb-1" style={{ color: 'var(--text-color)' }}>Blockchain Ballot</h1>
-            <p className="opacity-70" style={{ color: 'var(--text-color)' }}>Your vote is anonymous, transparent, and immutable.</p>
+            <h1 className="text-3xl font-bold mb-1" style={{ color: 'var(--text-color)' }}>
+              Blockchain Ballot — Election #{electionId}
+            </h1>
+            <p className="opacity-70" style={{ color: 'var(--text-color)' }}>
+              Your vote is anonymous, transparent, and immutable.
+            </p>
           </div>
 
           <div className="flex items-center gap-3">
@@ -95,7 +123,7 @@ const VotingDashboard = () => {
             </div>
 
             <button
-              onClick={() => loadInitialData(currentAccount)}
+              onClick={() => loadInitialData(currentAccount, electionId)}
               disabled={isLoading}
               title="Refresh Results"
               className="p-2 opacity-70 hover:opacity-100 rounded-lg transition-colors border shadow-sm"
@@ -183,7 +211,7 @@ const VotingDashboard = () => {
                         </span>
                         {c.photoPath ? (
                           <img
-                            src={`http://localhost:5000${c.photoPath}`}
+                            src={getAssetUrl(c.photoPath)}
                             alt={c.name}
                             className="w-10 h-10 rounded-full object-cover border border-gray-200"
                           />
@@ -234,7 +262,11 @@ const VotingDashboard = () => {
           /* ── LIVE VOTING GRID ── */
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {candidates.map((candidate) => (
-              <CandidateCard key={candidate.id} candidate={candidate} />
+              <CandidateCard
+                key={candidate.id}
+                candidate={candidate}
+                onVote={() => vote(electionId, candidate.id)}
+              />
             ))}
           </div>
         )}

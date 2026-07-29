@@ -3,10 +3,12 @@ const mongoose = require('mongoose');
 /**
  * Unified OTP Model — replaces all in-memory OTP storage.
  * 
- * Handles three OTP contexts:
- *   - 'registration': stores pending user data alongside the OTP
- *   - 'login': simple email + OTP for session authentication
- *   - 'voting': simple email + OTP for ballot authorization
+ * Handles OTP contexts:
+ *   - 'registration_<electionId>': election-scoped voter registration
+ *   - 'login'                  : session authentication
+ *   - 'verifier_registration_<electionId>': verifier self-registration flow
+ *   - 'superadmin_registration': super admin creation wizard
+ *   - 'voting_<electionId>'    : per-election ballot authorization
  * 
  * Security features:
  *   - MongoDB TTL index auto-deletes expired documents (no manual cleanup needed)
@@ -26,10 +28,20 @@ const otpSchema = new mongoose.Schema(
       required: true,
     },
     // The context this OTP was issued for — controls validation behavior
+    // Valid values: 'login',
+    //               'superadmin_registration', 'registration_<electionId>',
+    //               'verifier_registration_<electionId>', or 'voting_<electionId>'
     purpose: {
       type: String,
-      enum: ['registration', 'login', 'voting'],
       required: true,
+      validate: {
+        validator: (v) =>
+          ['login', 'superadmin_registration'].includes(v) ||
+          /^registration_\d+$/.test(v) ||
+          /^verifier_registration_\d+$/.test(v) ||
+          /^voting_\d+$/.test(v),
+        message: (props) => `'${props.value}' is not a valid OTP purpose`,
+      },
     },
     // Track failed verification attempts to prevent brute-force attacks
     attempts: {

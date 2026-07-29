@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import API from '../api/api';
 import { useAuth } from '../context/AuthContext';
@@ -8,12 +8,19 @@ import { ROUTES } from '../constants';
 const Register = () => {
   const navigate = useNavigate();
   const { login } = useAuth();
+  const [searchParams] = useSearchParams();
+  const inviteToken = searchParams.get('token');
+  const [electionInfo, setElectionInfo] = useState(null);
+  const [tokenValidating, setTokenValidating] = useState(!!inviteToken);
+
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     dob: '',
+    gender: '',
     address: '',
-    idNumber: '',
+    citizenshipNumber: '',
+    employeeId: '',
     walletAddress: ''
   });
   const [loading, setLoading] = useState(false);
@@ -23,6 +30,24 @@ const Register = () => {
   const [cooldown, setCooldown] = useState(0);
   // lockout: 30-minute lockout timer after 5 OTP requests
   const [lockout, setLockout] = useState(0);
+
+  // Resolve invite token to election info
+  useEffect(() => {
+    if (!inviteToken) return;
+    API.get(`/elections/by-token/${inviteToken}`)
+      .then((res) => {
+        setElectionInfo(res.data);
+        if (res.data.status !== 'registration_open') {
+          toast.error(`Registration for "${res.data.title}" is not currently open.`);
+        }
+      })
+      .catch((err) => {
+        toast.error(err.response?.data?.message || 'Invalid or expired invitation link.');
+      })
+      .finally(() => setTokenValidating(false));
+  }, [inviteToken]);
+
+
 
   // Live countdown for cooldown timer
   useEffect(() => {
@@ -93,6 +118,23 @@ const Register = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
+    if (!inviteToken) {
+      toast.error('Please use the registration link from your election invitation email.');
+      return;
+    }
+    if (
+      !formData.name.trim() ||
+      !formData.email.trim() ||
+      !formData.dob ||
+      !formData.gender ||
+      !formData.address.trim() ||
+      !formData.citizenshipNumber.trim() ||
+      !formData.employeeId.trim()
+    ) {
+      toast.error('Full name, email, date of birth, gender, address, citizenship number, and employee ID are required.');
+      return;
+    }
+
     // Block client-side if locked or on cooldown
     if (isBlocked) {
       const mins = Math.ceil(lockout / 60);
@@ -125,14 +167,17 @@ const Register = () => {
 
     try {
       const response = await API.post('/auth/register-init', {
-        name: formData.name,
-        email: formData.email,
+        name: formData.name.trim(),
+        email: formData.email.trim().toLowerCase(),
         dob: formData.dob,
-        address: formData.address,
-        idNumber: formData.idNumber,
+        gender: formData.gender,
+        address: formData.address.trim(),
+        citizenshipNumber: formData.citizenshipNumber.trim(),
+        employeeId: formData.employeeId.trim(),
         walletAddress: address,
         signature,
-        message
+        message,
+        ...(inviteToken && { inviteToken }),
       });
       const { cooldownSeconds } = response.data;
       if (cooldownSeconds && cooldownSeconds > 0) {
@@ -140,6 +185,7 @@ const Register = () => {
       }
       toast.success('OTP sent to your email!');
       setStep(2);
+
     } catch (error) {
       console.error('Register Error:', error.response?.data || error.message);
       const data = error.response?.data || {};
@@ -167,7 +213,8 @@ const Register = () => {
     try {
       const response = await API.post('/auth/verify-register-otp', {
         email: formData.email,
-        otp
+        otp,
+        inviteToken,
       });
       const { token, ...userData } = response.data;
 
@@ -201,6 +248,25 @@ const Register = () => {
     setLoading(true);
     const address = formData.walletAddress;
 
+    if (!inviteToken) {
+      toast.error('Please use the registration link from your election invitation email.');
+      setLoading(false);
+      return;
+    }
+    if (
+      !formData.name.trim() ||
+      !formData.email.trim() ||
+      !formData.dob ||
+      !formData.gender ||
+      !formData.address.trim() ||
+      !formData.citizenshipNumber.trim() ||
+      !formData.employeeId.trim()
+    ) {
+      toast.error('Full name, email, date of birth, gender, address, citizenship number, and employee ID are required.');
+      setLoading(false);
+      return;
+    }
+
     const sigData = await getWalletSignature(address);
     if (!sigData) {
       setLoading(false);
@@ -210,14 +276,17 @@ const Register = () => {
 
     try {
       const response = await API.post('/auth/register-init', {
-        name: formData.name,
-        email: formData.email,
+        name: formData.name.trim(),
+        email: formData.email.trim().toLowerCase(),
         dob: formData.dob,
-        address: formData.address,
-        idNumber: formData.idNumber,
+        gender: formData.gender,
+        address: formData.address.trim(),
+        citizenshipNumber: formData.citizenshipNumber.trim(),
+        employeeId: formData.employeeId.trim(),
         walletAddress: address,
         signature,
-        message
+        message,
+        inviteToken,
       });
       const { cooldownSeconds } = response.data;
       if (cooldownSeconds && cooldownSeconds > 0) {
@@ -249,12 +318,32 @@ const Register = () => {
   return (
     <div className="min-h-screen flex items-center justify-center p-6 transition-colors duration-300" style={{ backgroundColor: 'var(--bg-color)' }}>
       <div className="max-w-md w-full p-8 rounded-xl shadow-md border transition-colors duration-300" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
-        <h2 className="text-2xl font-bold mb-6 text-center" style={{ color: 'var(--text-color)' }}>
+        <h2 className="text-2xl font-bold mb-4 text-center" style={{ color: 'var(--text-color)' }}>
           {step === 1 ? 'Register to VoteChain' : 'Verify Your Email'}
         </h2>
-        
+
+        {/* Invite token validating spinner */}
+        {tokenValidating && (
+          <div className="flex items-center justify-center gap-2 text-sm text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-3 mb-4">
+            <div className="w-4 h-4 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+            Validating your invitation link...
+          </div>
+        )}
+
+        {/* Election invitation banner */}
+        {electionInfo && !tokenValidating && (
+          <div className="mb-5 p-4 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-900 text-sm">
+            <div className="font-bold text-xs uppercase tracking-wider text-indigo-500 mb-1">Official Invitation</div>
+            <div className="font-bold text-base">{electionInfo.title}</div>
+            <div className="text-xs text-indigo-700 mt-0.5">
+              Election #{electionInfo.electionId} · Registration is {electionInfo.status === 'registration_open' ? 'Open' : electionInfo.status}
+            </div>
+          </div>
+        )}
+
         {step === 1 ? (
           <form onSubmit={handleSubmit} className="space-y-4">
+
             <div>
               <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-color)' }}>Full Name</label>
               <input
@@ -294,7 +383,23 @@ const Register = () => {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-color)' }}>Address</label>
+              <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-color)' }}>Gender</label>
+              <select
+                name="gender"
+                required
+                value={formData.gender}
+                onChange={handleChange}
+                className="w-full px-4 py-2 rounded-lg outline-none transition-colors border"
+                style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-color)', borderColor: 'var(--border-color)' }}
+              >
+                <option value="">Select gender</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-color)' }}>Permanent Address</label>
               <input
                 type="text"
                 name="address"
@@ -307,16 +412,29 @@ const Register = () => {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-color)' }}>ID Number</label>
+              <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-color)' }}>Citizenship Number</label>
               <input
                 type="text"
-                name="idNumber"
+                name="citizenshipNumber"
                 required
-                value={formData.idNumber}
+                value={formData.citizenshipNumber}
                 onChange={handleChange}
                 className="w-full px-4 py-2 rounded-lg outline-none transition-colors border"
                 style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-color)', borderColor: 'var(--border-color)' }}
-                placeholder="Enter ID Number"
+                placeholder="Enter citizenship number"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-color)' }}>Employee ID</label>
+              <input
+                type="text"
+                name="employeeId"
+                required
+                value={formData.employeeId}
+                onChange={handleChange}
+                className="w-full px-4 py-2 rounded-lg outline-none transition-colors border"
+                style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-color)', borderColor: 'var(--border-color)' }}
+                placeholder="Enter employee ID"
               />
             </div>
             <div>

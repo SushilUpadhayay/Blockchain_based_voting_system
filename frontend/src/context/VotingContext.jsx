@@ -34,6 +34,7 @@ export const VotingProvider = ({ children }) => {
   const [networkError, setNetworkError] = useState('');
   const [contractFound, setContractFound] = useState(true);
   const [isOtpModalOpen, setIsOtpModalOpen] = useState(false);
+  const [pendingElectionId, setPendingElectionId] = useState(null);
   const [pendingCandidateId, setPendingCandidateId] = useState(null);
   const [winner, setWinner] = useState(null);
 
@@ -86,84 +87,81 @@ export const VotingProvider = ({ children }) => {
   }, [checkNetwork]);
 
   // ── Data loaders ──
-  const loadCandidates = useCallback(async (contractInstance) => {
+  const loadCandidates = useCallback(async (electionId, contractInstance) => {
+    if (!electionId) return;
+    const eId = Number(electionId);
+
+    const normalizeCandidate = (candidate) => ({
+      id: Number(candidate.id ?? candidate.candidateId),
+      name: candidate.name,
+      voteCount: Number(candidate.voteCount || 0),
+      party: candidate.party || '',
+      photoPath: candidate.photoPath || null,
+    });
+
+    try {
+      const res = await API.get(`/elections/${eId}/candidates`);
+      if (Array.isArray(res.data)) {
+        setCandidates(res.data.map(normalizeCandidate));
+        return;
+      }
+    } catch (metaErr) {
+      console.warn(`[VotingContext] merged candidate metadata failed for election ${eId}:`, metaErr.message);
+    }
+
     try {
       const contract = contractInstance ?? (await getContract());
       if (!contract) return;
 
-      const data = await contract.getCandidates();
-      const rawCandidates = data.map((c) => ({
-        id: Number(c.id),
-        name: c.name,
-        voteCount: Number(c.voteCount),
-      }));
-
-      // Fetch off-chain metadata (party & photo) from backend
-      try {
-        const endpoint = user?.role === 'admin' ? '/admin/candidates-meta' : '/user/candidates-meta';
-        const metaRes = await API.get(endpoint);
-        const metaMap = {};
-        if (Array.isArray(metaRes.data)) {
-          metaRes.data.forEach((item) => {
-            metaMap[item.id] = item;
-          });
-        }
-        setCandidates(
-          rawCandidates.map((c) => ({
-            ...c,
-            party: metaMap[c.id]?.party || '',
-            photoPath: metaMap[c.id]?.photoPath || null,
-          }))
-        );
-      } catch (metaErr) {
-        setCandidates(rawCandidates);
-      }
+      const data = await contract.getCandidates(eId);
+      setCandidates(data.map(normalizeCandidate));
     } catch (err) {
-      console.error('[VotingContext] loadCandidates failed:', err.message);
+      console.error(`[VotingContext] loadCandidates failed for election ${eId}:`, err.message);
     }
-  }, [getContract, user]);
+  }, [getContract]);
 
-  const loadInitialData = useCallback(async (account) => {
-    // Skip blockchain queries for users who are not yet registered/approved.
-    // Pending, rejected, and blocked users have no need to query the chain.
-    if (user && user.role !== 'admin' && user.status !== 'registered') {
-      return;
-    }
-
+  const loadInitialData = useCallback(async (account, electionId = 1) => {
+    const eId = Number(electionId);
     try {
       setIsLoading(true);
       const contract = await getContract();
       if (!contract) return;
 
-      const [active, started] = await contract.getElectionStatus();
+      const [active, started] = await contract.getElectionStatus(eId);
       setElectionStatus({ active, started });
 
-      const adminAddr = await contract.admin();
-      setIsAdmin(adminAddr.toLowerCase() === account.toLowerCase());
+      try {
+        const electionData = await contract.elections(eId);
+        const superAdminAddr = electionData.superAdmin;
+        setIsAdmin(superAdminAddr.toLowerCase() === account.toLowerCase());
+      } catch {
+        const adminAddr = await contract.admin();
+        setIsAdmin(adminAddr.toLowerCase() === account.toLowerCase());
+      }
 
-      const voted = await contract.hasVoted(account);
+      const voted = await contract.hasVoted(eId, account);
       setHasVoted(voted);
 
-      await loadCandidates(contract);
+      await loadCandidates(eId, contract);
 
       // If election has ended, fetch the winner
       if (started && !active) {
         try {
-          const winnerName = await contract.getWinner();
+          const winnerName = await contract.getWinner(eId);
           setWinner(winnerName);
         } catch (winnerErr) {
-          console.warn('[VotingContext] getWinner failed (possibly no votes cast):', winnerErr.message);
+          console.warn(`[VotingContext] getWinner failed for election ${eId}:`, winnerErr.message);
           setWinner(null);
         }
       } else {
         setWinner(null);
       }
     } catch (err) {
-      console.error('[VotingContext] loadInitialData failed:', err.message);
+      console.error(`[VotingContext] loadInitialData failed for election ${eId}:`, err.message);
     } finally {
       setIsLoading(false);
     }
-  }, [getContract, loadCandidates, user]);
+  }, [getContract, loadCandidates]);
 
   // ── Wallet ──
   const connectWallet = async () => {
@@ -175,7 +173,7 @@ export const VotingProvider = ({ children }) => {
       });
 
       setCurrentAccount(accounts[0]);
-      await loadInitialData(accounts[0]);
+      await loadInitialData(accounts[0], 1);
     } catch (err) {
       console.error('[VotingContext] connectWallet error:', err);
       toast.error('Wallet connection failed.');
@@ -188,7 +186,7 @@ export const VotingProvider = ({ children }) => {
       const accounts = await window.ethereum.request({ method: 'eth_accounts' });
       if (accounts.length > 0) {
         setCurrentAccount(accounts[0]);
-        await loadInitialData(accounts[0]);
+        await loadInitialData(accounts[0], 1);
       }
     } catch (err) {
       console.error('[VotingContext] checkIfWalletIsConnected error:', err);
@@ -196,7 +194,7 @@ export const VotingProvider = ({ children }) => {
   }, [loadInitialData]);
 
   // ── Voter action ──
-  const vote = async (candidateId) => {
+  const vote = async (electionId, candidateId) => {
     const toastId = 'vote';
     try {
       if (!window.ethereum) {
@@ -218,7 +216,8 @@ export const VotingProvider = ({ children }) => {
         return;
       }
 
-      // Step 1: Open OTP Modal to verify voter before casting vote
+      // Open OTP Modal to verify voter before casting vote
+      setPendingElectionId(Number(electionId));
       setPendingCandidateId(candidateId);
       setIsOtpModalOpen(true);
     } catch (err) {
@@ -227,7 +226,7 @@ export const VotingProvider = ({ children }) => {
     }
   };
 
-  const executeVoteOnChain = async (candidateId) => {
+  const executeVoteOnChain = async (electionId, candidateId) => {
     const toastId = 'vote';
     try {
       if (!window.ethereum) {
@@ -242,6 +241,7 @@ export const VotingProvider = ({ children }) => {
       if (!currentWallet || !registeredWallet || currentWallet.toLowerCase() !== registeredWallet.toLowerCase()) {
         toast.error('Connected wallet does not match your registered identity.', { id: toastId });
         setPendingCandidateId(null);
+        setPendingElectionId(null);
         return;
       }
 
@@ -250,13 +250,14 @@ export const VotingProvider = ({ children }) => {
       if (!contract) return;
 
       toast.loading('Submitting vote to blockchain…', { id: toastId });
-      const tx = await contract.vote(candidateId);
+      const tx = await contract.vote(Number(electionId), candidateId);
       await tx.wait();
 
       toast.success('Vote cast successfully!', { id: toastId });
       setHasVoted(true);
       setPendingCandidateId(null);
-      await loadCandidates(contract);
+      setPendingElectionId(null);
+      await loadCandidates(electionId, contract);
     } catch (err) {
       console.error('[VotingContext] executeVoteOnChain error:', err);
       toast.error(err.reason ?? err.message ?? 'Vote failed.', { id: toastId });
@@ -266,81 +267,223 @@ export const VotingProvider = ({ children }) => {
   };
 
   const onOtpVerified = () => {
-    if (pendingCandidateId !== null) {
-      executeVoteOnChain(pendingCandidateId);
+    if (pendingElectionId !== null && pendingCandidateId !== null) {
+      executeVoteOnChain(pendingElectionId, pendingCandidateId);
     }
   };
 
-  // ── Admin actions ──
-  const addCandidate = async (name) => {
-    const toastId = 'addCandidate';
+  // ── Election Admin actions ──
+  const createElection = async (electionData) => {
     try {
       setIsLoading(true);
-      const contract = await getContract();
-      if (!contract) return;
-
-      toast.loading(`Adding ${name}…`, { id: toastId });
-      const tx = await contract.addCandidate(name);
-      await tx.wait();
-
-      toast.success(`"${name}" added!`, { id: toastId });
-      await loadCandidates();
+      const res = await API.post('/elections', electionData);
+      toast.success('Election created successfully!');
+      return res.data;
     } catch (err) {
-      console.error('[VotingContext] addCandidate error:', err);
-      toast.error(err.reason ?? err.message ?? 'Failed to add candidate.', { id: toastId });
+      console.error('[VotingContext] createElection error:', err);
+      toast.error(err.response?.data?.message || 'Failed to create election.');
+      throw err;
     } finally {
       setIsLoading(false);
     }
   };
 
+  const addCandidate = async (electionId, formData) => {
+    const toastId = 'addCandidate';
+    try {
+      setIsLoading(true);
+      const name = formData.get('name');
+      if (!name) throw new Error('Candidate name is required');
 
+      const contract = await getContract();
+      if (!contract) return;
 
-  const startElection = async () => {
+      toast.loading('Please confirm candidate addition in MetaMask…', { id: toastId });
+      const tx = await contract.addCandidate(Number(electionId), name);
+      toast.loading('Adding candidate on blockchain…', { id: toastId });
+      await tx.wait();
+
+      toast.loading('Saving candidate metadata…', { id: toastId });
+      await API.post(`/elections/${electionId}/candidates`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      toast.success('Candidate added to blockchain & database!', { id: toastId });
+      await loadCandidates(electionId, contract);
+    } catch (err) {
+      console.error('[VotingContext] addCandidate error:', err);
+      toast.error(err.reason ?? err.response?.data?.message ?? err.message ?? 'Failed to add candidate.', { id: toastId });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const uploadRoster = async (electionId, formData) => {
+    const toastId = 'uploadRoster';
+    try {
+      setIsLoading(true);
+      toast.loading('Importing voter roster…', { id: toastId });
+      const res = await API.post(`/elections/${electionId}/roster/upload`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      toast.success(res.data.message || 'Roster imported successfully!', { id: toastId });
+      return res.data;
+    } catch (err) {
+      console.error('[VotingContext] uploadRoster error:', err);
+      toast.error(err.response?.data?.message || 'Failed to upload roster.', { id: toastId });
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const openRegistration = async (electionId) => {
+    const toastId = 'openRegistration';
+    try {
+      setIsLoading(true);
+      toast.loading('Opening registration & sending invitation emails…', { id: toastId });
+      const res = await API.post(`/elections/${electionId}/open-registration`);
+      toast.success(res.data.message || 'Registration is now open!', { id: toastId });
+      return res.data;
+    } catch (err) {
+      console.error('[VotingContext] openRegistration error:', err);
+      toast.error(err.response?.data?.message || 'Failed to open registration.', { id: toastId });
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const assignVerifier = async (electionId, payload) => {
+    const toastId = 'assignVerifier';
+    try {
+      setIsLoading(true);
+      const eId = Number(electionId);
+
+      const name = String(payload?.name || '').trim();
+      const email = String(payload?.email || '').trim().toLowerCase();
+      if (!name || !email) throw new Error('Verifier name and email are required');
+
+      toast.loading('Sending verifier invitation email…', { id: toastId });
+      const res = await API.post(`/elections/${eId}/verifiers`, { ...payload, name, email });
+      toast.success(res.data.message || 'Verifier invitation sent!', { id: toastId });
+      return res.data;
+    } catch (err) {
+      console.error('[VotingContext] assignVerifier error:', err);
+      toast.error(err.reason ?? err.response?.data?.message ?? err.message ?? 'Failed to assign verifier.', { id: toastId });
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const removeVerifier = async (electionId, verifierAddress) => {
+    const toastId = 'removeVerifier';
+    try {
+      setIsLoading(true);
+      const eId = Number(electionId);
+
+      const contract = await getContract();
+      if (!contract) return;
+
+      toast.loading('Please confirm verifier removal in MetaMask…', { id: toastId });
+      const tx = await contract.removeRegistrationVerifier(eId, verifierAddress);
+      toast.loading('Removing verifier on blockchain…', { id: toastId });
+      await tx.wait();
+
+      // Now update MongoDB
+      const res = await API.delete(`/elections/${eId}/verifiers/${verifierAddress}`);
+      toast.success('Registration verifier removed!', { id: toastId });
+      return res.data;
+    } catch (err) {
+      console.error('[VotingContext] removeVerifier error:', err);
+      toast.error(err.reason ?? err.response?.data?.message ?? err.message ?? 'Failed to remove verifier.', { id: toastId });
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const approveVoter = async (electionId, userId, voterWallet) => {
+    const toastId = 'approveVoter';
+    try {
+      setIsLoading(true);
+      const eId = Number(electionId);
+
+      if (!voterWallet) throw new Error('Voter does not have a linked wallet address');
+
+      toast.loading('Authorizing voter on blockchain…', { id: toastId });
+      const res = await API.post(`/admin/elections/${eId}/approve/${userId}`, {});
+      toast.success(res.data.message || 'Voter authorized on-chain and approval saved!', { id: toastId });
+    } catch (err) {
+      console.error('[VotingContext] approveVoter error:', err);
+      toast.error(err.reason ?? err.response?.data?.message ?? err.message ?? 'Failed to approve voter.', { id: toastId });
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const syncBlockchain = async (electionId) => {
+    const toastId = 'syncBlockchain';
+    try {
+      setIsLoading(true);
+      toast.loading('Syncing with blockchain…', { id: toastId });
+      const res = await API.post(`/elections/${electionId}/sync-blockchain`);
+      toast.success(res.data.message || 'Synced successfully with blockchain!', { id: toastId });
+      return res.data;
+    } catch (err) {
+      console.error('[VotingContext] syncBlockchain error:', err);
+      toast.error(err.response?.data?.message || 'Sync failed. Check server logs.', { id: toastId });
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const startElection = async (electionId) => {
     const toastId = 'startElection';
     try {
       setIsLoading(true);
       const contract = await getContract();
       if (!contract) return;
 
-      toast.loading('Starting election…', { id: toastId });
-      const tx = await contract.startElection();
+      toast.loading('Please confirm Start Election in MetaMask…', { id: toastId });
+      const tx = await contract.startElection(Number(electionId));
+      toast.loading('Starting election on blockchain…', { id: toastId });
       await tx.wait();
 
-      toast.success('Election is now ACTIVE!', { id: toastId });
+      await API.post(`/elections/${electionId}/start`);
+
+      toast.success('Election is now ACTIVE on-chain!', { id: toastId });
       setElectionStatus({ active: true, started: true });
     } catch (err) {
       console.error('[VotingContext] startElection error:', err);
-      toast.error(err.reason ?? err.message ?? 'Failed to start election.', { id: toastId });
+      toast.error(err.reason ?? err.response?.data?.message ?? err.message ?? 'Failed to start election.', { id: toastId });
     } finally {
       setIsLoading(false);
     }
   };
 
-  const endElection = async () => {
+  const endElection = async (electionId) => {
     const toastId = 'endElection';
     try {
       setIsLoading(true);
       const contract = await getContract();
       if (!contract) return;
 
-      toast.loading('Ending election…', { id: toastId });
-      const tx = await contract.endElection();
+      toast.loading('Please confirm End Election in MetaMask…', { id: toastId });
+      const tx = await contract.endElection(Number(electionId));
+      toast.loading('Ending election on blockchain…', { id: toastId });
       await tx.wait();
 
-      toast.success('Election ended.', { id: toastId });
-      setElectionStatus((prev) => ({ ...prev, active: false }));
+      await API.post(`/elections/${electionId}/end`);
 
-      // Fetch winner after election ends
-      try {
-        const winnerName = await contract.getWinner();
-        setWinner(winnerName);
-      } catch (winnerErr) {
-        console.warn('[VotingContext] getWinner after endElection failed:', winnerErr.message);
-        setWinner(null);
-      }
+      toast.success('Election concluded on-chain.', { id: toastId });
+      setElectionStatus((prev) => ({ ...prev, active: false }));
     } catch (err) {
       console.error('[VotingContext] endElection error:', err);
-      toast.error(err.reason ?? err.message ?? 'Failed to end election.', { id: toastId });
+      toast.error(err.reason ?? err.response?.data?.message ?? err.message ?? 'Failed to end election.', { id: toastId });
     } finally {
       setIsLoading(false);
     }
@@ -357,8 +500,6 @@ export const VotingProvider = ({ children }) => {
         const newAccount = accounts[0];
         setCurrentAccount(newAccount);
 
-        // Security reinforcement: if the new active MetaMask address does not match
-        // the logged-in user's registered wallet address, log them out immediately.
         if (user && user.role !== 'admin' && user.walletAddress && user.walletAddress.toLowerCase() !== newAccount.toLowerCase()) {
           toast.error('MetaMask account changed. Session terminated for security.', { id: 'wallet-change-logout' });
           logout();
@@ -366,7 +507,7 @@ export const VotingProvider = ({ children }) => {
           return;
         }
 
-        loadInitialData(newAccount);
+        loadInitialData(newAccount, 1);
       } else {
         setCurrentAccount('');
         setIsAdmin(false);
@@ -404,11 +545,19 @@ export const VotingProvider = ({ children }) => {
         RPC_URL,
         CHAIN_NAME,
         pendingCandidateId,
+        pendingElectionId,
         winner,
         vote,
         loadCandidates,
         loadInitialData,
+        createElection,
         addCandidate,
+        uploadRoster,
+        openRegistration,
+        assignVerifier,
+        removeVerifier,
+        approveVoter,
+        syncBlockchain,
         startElection,
         endElection,
       }}
@@ -417,6 +566,7 @@ export const VotingProvider = ({ children }) => {
         isOpen={isOtpModalOpen}
         onClose={() => setIsOtpModalOpen(false)}
         onVerified={onOtpVerified}
+        electionId={pendingElectionId}
         purpose="voting"
       />
       {children}

@@ -1,6 +1,13 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
+const getRequestElectionId = (req) => req.params?.electionId || req.body?.electionId || req.query?.electionId;
+
+const isBlockedFromAllVoterRegistrations = (user) => {
+  const registrations = user?.elections || [];
+  return user?.role === 'user' && registrations.length > 0 && registrations.every((entry) => entry.status === 'blocked');
+};
+
 /**
  * JWT Authentication Middleware.
  * Decodes and verifies session JWTs, handles token expiration, validates real-time 
@@ -33,6 +40,18 @@ const protect = async (req, res, next) => {
       if (dbUser.status === 'blocked') {
         res.status(403);
         return next(new Error('Account blocked'));
+      }
+      if (isBlockedFromAllVoterRegistrations(dbUser)) {
+        res.status(403);
+        return next(new Error('This voter account is blocked'));
+      }
+      const electionId = getRequestElectionId(req);
+      if (electionId) {
+        const electionRegistration = dbUser.getElectionRegistration?.(electionId);
+        if (electionRegistration?.status === 'blocked') {
+          res.status(403);
+          return next(new Error('This voter is blocked from this election'));
+        }
       }
       // 4. Attach user data to request context for downstream controllers & role guards
       req.user = dbUser;

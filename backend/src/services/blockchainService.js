@@ -4,8 +4,6 @@ const { ethers } = require('ethers');
 const RPC_URL = 'http://127.0.0.1:8545';
 
 // Lazy Contract Instance
-// We initialize the contract on first use rather than at module load.
-// This prevents server startup crashes if the Hardhat node is not running.
 let _contract = null;
 let _provider = null;
 let _lastKnownBlockHash = null; // used to detect Hardhat node resets
@@ -19,8 +17,7 @@ const getContractAddress = () => {
 
 /**
  * Detects if the Hardhat node has been restarted by checking whether the
- * genesis block hash has changed since last use. If it has, the in-memory
- * contract instance is stale and must be rebuilt.
+ * genesis block hash has changed since last use.
  */
 const hasNodeRestarted = async (provider) => {
   try {
@@ -48,7 +45,6 @@ const getContract = async () => {
 
     const currentContractAddress = getContractAddress();
 
-    // If node was restarted or contract address changed, discard cached contract so it's rebuilt
     const nodeRestarted = _contract && await hasNodeRestarted(_provider);
     const addressChanged = _contract && _lastKnownContractAddress !== currentContractAddress;
 
@@ -64,7 +60,6 @@ const getContract = async () => {
       const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, _provider);
       _contract = new ethers.Contract(currentContractAddress, abi, wallet);
       _lastKnownContractAddress = currentContractAddress;
-      // Capture current genesis hash on first build
       const genesisBlock = await _provider.getBlock(0);
       if (genesisBlock) _lastKnownBlockHash = genesisBlock.hash;
     }
@@ -79,17 +74,49 @@ const getContract = async () => {
   }
 };
 
-// Service Functions
+// ── Service Functions (Multi-Election Aware) ──
 
-const registerVoterOnChain = async (walletAddress) => {
+const createElectionOnChain = async (title) => {
   try {
     const contract = await getContract();
+    const tx = await contract.createElection(title);
+    const receipt = await tx.wait();
 
-    if (!contract.interface.getFunction('authorizeVoter')) {
-      throw new Error('authorizeVoter function not found in ABI');
+    // Parse logs for ElectionCreated event to extract assigned electionId
+    let electionId = null;
+    for (const log of receipt.logs) {
+      try {
+        const parsed = contract.interface.parseLog(log);
+        if (parsed && parsed.name === 'ElectionCreated') {
+          electionId = Number(parsed.args.electionId);
+          break;
+        }
+      } catch {
+        // Not a matching event log
+      }
     }
 
-    const tx = await contract.authorizeVoter(walletAddress);
+    // Fallback if log parsing didn't capture electionId: query total election count
+    if (electionId === null) {
+      const count = await contract.getElectionCount();
+      electionId = Number(count);
+    }
+
+    return {
+      success: true,
+      txHash: receipt.hash,
+      electionId,
+    };
+  } catch (error) {
+    console.error('[BlockchainService] createElectionOnChain error:', error.message);
+    throw new Error('Blockchain createElection failed: ' + error.message);
+  }
+};
+
+const registerVoterOnChain = async (electionId, walletAddress) => {
+  try {
+    const contract = await getContract();
+    const tx = await contract.authorizeVoter(Number(electionId), walletAddress);
     const receipt = await tx.wait();
 
     return {
@@ -102,15 +129,10 @@ const registerVoterOnChain = async (walletAddress) => {
   }
 };
 
-const addCandidateOnChain = async (name) => {
+const addCandidateOnChain = async (electionId, name) => {
   try {
     const contract = await getContract();
-
-    if (!contract.interface.getFunction('addCandidate')) {
-      throw new Error('addCandidate function not found in ABI');
-    }
-
-    const tx = await contract.addCandidate(name);
+    const tx = await contract.addCandidate(Number(electionId), name);
     return await tx.wait();
   } catch (error) {
     console.error('[BlockchainService] addCandidateOnChain error:', error.message);
@@ -118,15 +140,32 @@ const addCandidateOnChain = async (name) => {
   }
 };
 
-const startElectionOnChain = async () => {
+const assignRegistrationVerifierOnChain = async (electionId, verifierAddress) => {
   try {
     const contract = await getContract();
+    const tx = await contract.assignRegistrationVerifier(Number(electionId), verifierAddress);
+    return await tx.wait();
+  } catch (error) {
+    console.error('[BlockchainService] assignRegistrationVerifierOnChain error:', error.message);
+    throw new Error('Blockchain assignRegistrationVerifier failed: ' + error.message);
+  }
+};
 
-    if (!contract.interface.getFunction('startElection')) {
-      throw new Error('startElection function not found in ABI');
-    }
+const removeRegistrationVerifierOnChain = async (electionId, verifierAddress) => {
+  try {
+    const contract = await getContract();
+    const tx = await contract.removeRegistrationVerifier(Number(electionId), verifierAddress);
+    return await tx.wait();
+  } catch (error) {
+    console.error('[BlockchainService] removeRegistrationVerifierOnChain error:', error.message);
+    throw new Error('Blockchain removeRegistrationVerifier failed: ' + error.message);
+  }
+};
 
-    const tx = await contract.startElection();
+const startElectionOnChain = async (electionId) => {
+  try {
+    const contract = await getContract();
+    const tx = await contract.startElection(Number(electionId));
     return await tx.wait();
   } catch (error) {
     console.error('[BlockchainService] startElectionOnChain error:', error.message);
@@ -134,15 +173,10 @@ const startElectionOnChain = async () => {
   }
 };
 
-const endElectionOnChain = async () => {
+const endElectionOnChain = async (electionId) => {
   try {
     const contract = await getContract();
-
-    if (!contract.interface.getFunction('endElection')) {
-      throw new Error('endElection function not found in ABI');
-    }
-
-    const tx = await contract.endElection();
+    const tx = await contract.endElection(Number(electionId));
     return await tx.wait();
   } catch (error) {
     console.error('[BlockchainService] endElectionOnChain error:', error.message);
@@ -150,15 +184,10 @@ const endElectionOnChain = async () => {
   }
 };
 
-const isVoterAuthorizedOnChain = async (walletAddress) => {
+const isVoterAuthorizedOnChain = async (electionId, walletAddress) => {
   try {
     const contract = await getContract();
-
-    if (!contract.interface.getFunction('registeredVoters')) {
-      throw new Error('registeredVoters function not found in ABI');
-    }
-
-    const isRegistered = await contract.registeredVoters(walletAddress);
+    const isRegistered = await contract.registeredVoters(Number(electionId), walletAddress);
     return isRegistered;
   } catch (error) {
     console.error('[BlockchainService] isVoterAuthorizedOnChain error:', error.message);
@@ -166,15 +195,10 @@ const isVoterAuthorizedOnChain = async (walletAddress) => {
   }
 };
 
-const getElectionStatusOnChain = async () => {
+const getElectionStatusOnChain = async (electionId) => {
   try {
     const contract = await getContract();
-
-    if (!contract.interface.getFunction('getElectionStatus')) {
-      throw new Error('getElectionStatus function not found in ABI');
-    }
-
-    const [active, started] = await contract.getElectionStatus();
+    const [active, started] = await contract.getElectionStatus(Number(electionId));
     return { active, started };
   } catch (error) {
     console.error('[BlockchainService] getElectionStatusOnChain error:', error.message);
@@ -182,14 +206,10 @@ const getElectionStatusOnChain = async () => {
   }
 };
 
-/**
- * Reads all candidates from the blockchain.
- * Returns an array of plain objects: { id, name, voteCount }
- */
-const getCandidatesFromChain = async () => {
+const getCandidatesFromChain = async (electionId) => {
   try {
     const contract = await getContract();
-    const data = await contract.getCandidates();
+    const data = await contract.getCandidates(Number(electionId));
     return data.map((c) => ({
       id: Number(c.id),
       name: c.name,
@@ -201,12 +221,27 @@ const getCandidatesFromChain = async () => {
   }
 };
 
+const getWinnerFromChain = async (electionId) => {
+  try {
+    const contract = await getContract();
+    const winnerName = await contract.getWinner(Number(electionId));
+    return winnerName;
+  } catch (error) {
+    console.error('[BlockchainService] getWinnerFromChain error:', error.message);
+    throw new Error('Blockchain getWinner failed: ' + error.message);
+  }
+};
+
 module.exports = {
+  createElectionOnChain,
   registerVoterOnChain,
   addCandidateOnChain,
+  assignRegistrationVerifierOnChain,
+  removeRegistrationVerifierOnChain,
   startElectionOnChain,
   endElectionOnChain,
   isVoterAuthorizedOnChain,
   getElectionStatusOnChain,
   getCandidatesFromChain,
+  getWinnerFromChain,
 };

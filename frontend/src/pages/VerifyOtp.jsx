@@ -54,7 +54,13 @@ const VerifyOtp = () => {
       // 3. User with incomplete upload -> /upload
       // 4. All other authenticated voters -> /dashboard (Status Dashboard)
       if (userData.role === 'admin') {
-        navigate(ROUTES.ADMIN);
+        const firstAdminRole = userData.adminRoles?.[0];
+        const targetElectionId = firstAdminRole?.electionId || userData.electionId || 1;
+        if (firstAdminRole?.role === 'verifier') {
+          navigate(`/elections/${targetElectionId}/verifier`);
+        } else {
+          navigate(`/elections/${targetElectionId}/admin`);
+        }
       } else if (userData.status === USER_STATUS.BLOCKED) {
         toast.error('Your account has been permanently blocked.');
         navigate(ROUTES.LOGIN);

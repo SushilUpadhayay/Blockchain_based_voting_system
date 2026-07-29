@@ -1,1157 +1,265 @@
 import React, { useState, useEffect } from 'react';
-import { Navigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
   Users,
   Play,
   Square,
-  UserPlus,
-  CheckCircle,
-  XCircle,
+  UserCheck,
+  UserMinus,
+  ArrowLeft,
+  Settings,
   ShieldCheck,
+  Award,
   AlertCircle,
-  RefreshCw,
-  Wallet,
-  FileText,
-  Download,
-  X,
-  Trophy,
-  BarChart2,
-  ScanLine,
-  ChevronDown,
-  ChevronUp,
+  ExternalLink,
+  RotateCw,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useVoting } from '../context/VotingContext';
 import API from '../api/api';
-import ConfirmDialog from '../components/ConfirmDialog';
-import LogoutButton from '../components/LogoutButton';
+import Navbar from '../components/Navbar';
 
 const AdminDashboard = () => {
+  const { electionId: routeElectionId } = useParams();
+  const electionId = Number(routeElectionId || 1);
+  const navigate = useNavigate();
+
   const { user } = useAuth();
   const {
-    addCandidate,
+    removeVerifier,
     startElection,
     endElection,
+    syncBlockchain,
     electionStatus,
     isLoading: blockchainLoading,
     candidates,
-    currentAccount,
-    connectWallet,
-    winner,
     loadCandidates,
   } = useVoting();
 
-  const [users, setUsers] = useState([]);
-  const [registeredUsers, setRegisteredUsers] = useState([]);
-  const [candidateName, setCandidateName] = useState('');
-  const [candidateParty, setCandidateParty] = useState('');
-  const [candidatePhoto, setCandidatePhoto] = useState(null);
+  const [electionInfo, setElectionInfo] = useState(null);
+  const [candidateList, setCandidateList] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [fetching, setFetching] = useState(false);
-
-  // Dialog states
-  const [dialogConfig, setDialogConfig] = useState({
-    isOpen: false,
-    type: null, // 'reject', 'block', 'endElection'
-    userId: null,
-    reason: '',
-  });
-
-  const [selectedDocument, setSelectedDocument] = useState(null);
-  // Track which pending user row has its OCR panel open
-  const [expandedOcrRow, setExpandedOcrRow] = useState(null);
 
   useEffect(() => {
-    if (user?.role === 'admin') {
-      fetchUsers();
-      fetchRegisteredUsers();
-    }
-  }, [user]);
+    fetchElectionDetails();
+    fetchCandidates();
+  }, [electionId]);
 
-  const fetchUsers = async () => {
-    setFetching(true);
+  const fetchElectionDetails = async () => {
     try {
-      const res = await API.get('/admin/pending-users');
-      setUsers(res.data);
-    } catch (error) {
-      toast.error('Failed to fetch pending users');
-    } finally {
-      setFetching(false);
+      const res = await API.get(`/elections/${electionId}`);
+      setElectionInfo(res.data);
+    } catch (err) {
+      console.error('Failed to fetch election details:', err);
     }
   };
 
-  const fetchRegisteredUsers = async () => {
+  const fetchCandidates = async () => {
     try {
-      const res = await API.get('/admin/registered-users');
-      setRegisteredUsers(res.data);
-    } catch (error) {
-      toast.error('Failed to fetch registered users');
-    }
-  };
-
-  const handleApprove = async (id) => {
-    const toastId = toast.loading('Approving voter...');
-    try {
-      setLoading(true);
-      await API.post(`/admin/approve/${id}`);
-      toast.success('User approved and registered on blockchain', { id: toastId });
-      fetchUsers();
-      fetchRegisteredUsers();
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Approval failed', { id: toastId });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSyncToBlockchain = async (id) => {
-    try {
-      setLoading(true);
-      const toastId = toast.loading('Synchronizing voter to blockchain...');
-      const res = await API.post(`/admin/sync-voter/${id}`);
-      if (res.data.alreadySynced) {
-        toast.success(res.data.message || 'Voter is already authorized on-chain', { id: toastId });
-      } else {
-        toast.success('Voter successfully synchronized to blockchain', { id: toastId });
+      const res = await API.get(`/elections/${electionId}/candidates`);
+      if (Array.isArray(res.data)) {
+        setCandidateList(res.data);
       }
-      fetchRegisteredUsers();
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Blockchain synchronization failed');
+    } catch (err) {
+      console.error('Failed to fetch candidates list:', err);
+    }
+  };
+
+  const handleRemoveVerifier = async (address) => {
+    try {
+      setLoading(true);
+      await removeVerifier(electionId, address);
+      fetchElectionDetails();
+    } catch (err) {
+      // error already shown by context toast
+      console.error('Remove verifier error:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  const executeReject = async () => {
-    const { userId, reason } = dialogConfig;
-    closeDialog();
+  const handleSync = async () => {
     try {
-      setLoading(true);
-      await API.post(`/admin/reject/${userId}`, { reason });
-      toast.success('User rejected with reason');
-      fetchUsers();
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to reject user');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const executeBlock = async () => {
-    const { userId } = dialogConfig;
-    closeDialog();
-    try {
-      setLoading(true);
-      await API.post(`/admin/block/${userId}`);
-      toast.success('User permanently blocked');
-      fetchUsers();
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to block user');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const executeEndElection = async () => {
-    closeDialog();
-    await endElection();
-  };
-
-
-
-  const handleStartElection = async () => {
-    if (candidates.length === 0) {
-      return toast.error('Please add at least one candidate first.');
-    }
-    await startElection();
-  };
-
-  const handleAddCandidate = async (e) => {
-    e.preventDefault();
-    if (!candidateName.trim()) {
-      return toast.error('Candidate name is required');
-    }
-    const toastId = toast.loading(`Enrolling candidate ${candidateName}...`);
-    try {
-      setLoading(true);
-      const formData = new FormData();
-      formData.append('name', candidateName.trim());
-      formData.append('party', candidateParty.trim());
-      if (candidatePhoto) {
-        formData.append('photo', candidatePhoto);
+      const result = await syncBlockchain(electionId);
+      if (result) {
+        fetchElectionDetails();
+        fetchCandidates();
       }
-
-      await API.post('/admin/add-candidate', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-
-      toast.success(`Candidate "${candidateName}" enrolled successfully!`, { id: toastId });
-      setCandidateName('');
-      setCandidateParty('');
-      setCandidatePhoto(null);
-      await loadCandidates();
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to add candidate', { id: toastId });
-    } finally {
-      setLoading(false);
+    } catch (err) {
+      console.error('Sync error:', err);
     }
   };
 
-  const closeDialog = () => {
-    setDialogConfig({ isOpen: false, type: null, userId: null, reason: '' });
-  };
-
-  const getDocumentUrl = (docPath) => {
-    if (!docPath) return '#';
-    const baseUrl = API.defaults.baseURL.replace(/\/api$/, '');
-    const filename = docPath.split(/[\\/]/).pop();
-    return `${baseUrl}/uploads/${filename}`;
-  };
-
-  const handleViewDocument = (docPath, label) => {
-    if (!docPath) return;
-    const url = getDocumentUrl(docPath);
-    const type = docPath.toLowerCase().endsWith('.pdf') ? 'pdf' : 'image';
-    setSelectedDocument({ url, type, label });
-  };
-
-  const handleDownload = async (url, filename) => {
-    try {
-      const response = await fetch(url);
-      const blob = await response.blob();
-      const objectUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = objectUrl;
-      link.download = filename || 'document';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(objectUrl);
-    } catch (error) {
-      toast.error('Failed to download document');
-      console.error('Download error:', error);
-    }
-  };
+  const isDraft = electionInfo?.status === 'draft';
 
   return (
-    <div
-      className="min-h-screen py-12 px-4 sm:px-6 lg:px-8 transition-colors duration-300"
-      style={{ backgroundColor: 'var(--bg-color)' }}
-    >
-      <div className="max-w-6xl mx-auto space-y-8">
-        {/* Header */}
-        <div
-          className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-8 rounded-2xl shadow-sm border transition-colors duration-300"
-          style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}
-        >
-          <div>
-            <h1 className="text-3xl font-extrabold flex items-center gap-3" style={{ color: 'var(--text-color)' }}>
-              <ShieldCheck className="text-blue-600 w-8 h-8" />
-              Admin Control Panel
-            </h1>
-            <div className="mt-2 flex items-center gap-4">
-              <p className="text-sm opacity-70" style={{ color: 'var(--text-color)' }}>
-                Manage election configurations and voter approvals
-              </p>
-              <div
-                className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2 border ${
-                  !electionStatus.started
-                    ? 'bg-gray-100 text-gray-600 border-gray-200'
-                    : electionStatus.active
-                    ? 'bg-green-100 text-green-700 border-green-200 animate-pulse'
-                    : 'bg-red-100 text-red-700 border-red-200'
-                }`}
-              >
-                <div
-                  className={`w-2 h-2 rounded-full ${
-                    !electionStatus.started
-                      ? 'bg-gray-400'
-                      : electionStatus.active
-                      ? 'bg-green-600'
-                      : 'bg-red-600'
-                  }`}
-                />
-                {!electionStatus.started ? 'NOT STARTED' : electionStatus.active ? 'LIVE' : 'ENDED'}
-              </div>
-            </div>
-          </div>
+    <div className="min-h-screen flex flex-col transition-colors duration-300" style={{ backgroundColor: 'var(--bg-color)' }}>
+      <Navbar />
+
+      <main className="flex-1 max-w-7xl w-full mx-auto p-6 lg:p-8 space-y-8">
+        <div className="flex items-center justify-between">
+          <button
+            onClick={() => navigate('/elections')}
+            className="inline-flex items-center gap-2 text-sm font-medium opacity-70 hover:opacity-100 transition-opacity"
+            style={{ color: 'var(--text-color)' }}
+          >
+            <ArrowLeft className="w-4 h-4" /> Back to Election Portal
+          </button>
+
           <div className="flex items-center gap-3">
             <button
-              onClick={() => window.location.reload()}
-              className="p-2 rounded-xl border transition-all duration-300 hover:rotate-180 active:scale-95 shadow-sm group"
-              style={{ backgroundColor: 'var(--bg-color)', borderColor: 'var(--border-color)' }}
-              title="Refresh Page"
+              onClick={handleSync}
+              disabled={blockchainLoading || loading}
+              className="inline-flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded-xl border bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 transition-all disabled:opacity-50"
+              title="Manually sync election state with blockchain"
             >
-              <RefreshCw 
-                className="w-4 h-4 opacity-70 group-hover:opacity-100 group-hover:text-blue-600 transition-all" 
-                style={{ color: 'var(--text-color)' }} 
-              />
+              <RotateCw className={`w-3.5 h-3.5 ${blockchainLoading ? 'animate-spin' : ''}`} />
+              Sync with Blockchain
             </button>
-
-            {currentAccount ? (
-              <div
-                className="flex items-center gap-2 px-4 py-2 rounded-xl border transition-colors"
-                style={{ backgroundColor: 'var(--bg-color)', borderColor: 'var(--border-color)' }}
-              >
-                <Wallet className="w-4 h-4 opacity-50" style={{ color: 'var(--text-color)' }} />
-                <span className="text-xs font-mono opacity-70" style={{ color: 'var(--text-color)' }}>
-                  {currentAccount.slice(0, 6)}...{currentAccount.slice(-4)}
-                </span>
-                <span className="ml-2 w-2 h-2 bg-green-500 rounded-full" />
-              </div>
-            ) : (
-              <button
-                onClick={connectWallet}
-                className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-xl text-sm font-bold transition-all shadow-lg shadow-amber-100"
-              >
-                <Wallet className="w-4 h-4" />
-                Connect Admin Wallet
-              </button>
-            )}
-
-            {/* Admin Logout — visible within dashboard */}
-            <LogoutButton variant="danger" />
+            <Link
+              to={`/elections/${electionId}/setup`}
+              className="inline-flex items-center gap-2 text-xs font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg border border-indigo-200 dark:border-indigo-800 transition-all"
+            >
+              <Settings className="w-3.5 h-3.5" /> Manage Setup Checklist
+            </Link>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* SEC B: ELECTION CONTROL */}
-          <section
-            className="p-6 rounded-2xl shadow-sm border hover:shadow-md transition-all"
-            style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}
-          >
-            <div className="flex items-center gap-2 mb-6">
-              <div className="p-2 bg-purple-50 rounded-lg">
-                <Play className="w-5 h-5 text-purple-600" />
-              </div>
-              <h2 className="text-xl font-bold" style={{ color: 'var(--text-color)' }}>
-                Election Control
-              </h2>
-            </div>
-            <div className="space-y-4">
-              <button
-                onClick={handleStartElection}
-                disabled={blockchainLoading || electionStatus.started || !currentAccount}
-                className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold py-3 px-4 rounded-xl transition-all shadow-lg shadow-blue-200"
-              >
-                <Play className="w-4 h-4" />
-                {electionStatus.started ? 'Election Started' : 'Start Election'}
-              </button>
-              <button
-                onClick={() => setDialogConfig({ isOpen: true, type: 'endElection' })}
-                disabled={blockchainLoading || !electionStatus.active || !currentAccount}
-                className="w-full flex items-center justify-center gap-2 bg-white hover:bg-red-50 border-2 border-red-100 text-red-600 disabled:opacity-50 font-bold py-3 px-4 rounded-xl transition-all"
-              >
-                <Square className="w-4 h-4" />
-                {!electionStatus.started ? 'End Election' : !electionStatus.active ? 'Closed' : 'End Election'}
-              </button>
-            </div>
-            {!currentAccount && (
-              <p className="mt-4 text-xs text-amber-600 text-center font-medium">
-                Wallet connection required for admin actions
-              </p>
-            )}
-          </section>
-
-          {/* SEC C: CANDIDATE MANAGEMENT */}
-          <section
-            className="lg:col-span-2 p-6 rounded-2xl shadow-sm border hover:shadow-md transition-all"
-            style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}
-          >
-            <div className="flex items-center gap-2 mb-6">
-              <div className="p-2 bg-green-50 rounded-lg">
-                <UserPlus className="w-5 h-5 text-green-600" />
-              </div>
-              <h2 className="text-xl font-bold" style={{ color: 'var(--text-color)' }}>
-                Candidate Enrollment
-              </h2>
-              <span
-                className="ml-auto text-xs font-bold opacity-50 px-2 py-1 rounded"
-                style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-color)' }}
-              >
-                Current: {candidates.length}
-              </span>
-            </div>
-
-            {electionStatus.started ? (
-              <div className="p-4 bg-gray-50 rounded-xl border border-gray-200 flex items-center gap-3 text-gray-500">
-                <AlertCircle className="w-5 h-5" />
-                <p className="text-sm">
-                  Candidate enrollment is <strong>locked</strong> once election has started.
+        {/* Setup In-Progress Banner (If status === 'draft') */}
+        {isDraft && (
+          <div className="rounded-2xl bg-amber-50 border border-amber-200 dark:bg-amber-950/40 dark:border-amber-800 p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="w-6 h-6 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+              <div>
+                <h3 className="text-sm font-bold text-amber-900 dark:text-amber-200">
+                  Election Setup is Currently in Draft Mode
+                </h3>
+                <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">
+                  Complete candidate entry, roster import, and verifier invitations on the Setup Checklist page before opening registration.
                 </p>
               </div>
-            ) : (
-              <form onSubmit={handleAddCandidate} className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--text-color)' }}>
-                      Candidate Full Name *
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Ram Bahadur Thapa"
-                      value={candidateName}
-                      onChange={(e) => setCandidateName(e.target.value)}
-                      disabled={loading || blockchainLoading || electionStatus.started}
-                      className="w-full border p-3 rounded-xl outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-400 transition-all text-sm"
-                      style={{
-                        backgroundColor: 'var(--bg-color)',
-                        color: 'var(--text-color)',
-                        borderColor: 'var(--border-color)',
-                      }}
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--text-color)' }}>
-                      Political Party (Optional)
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Democratic Alliance (leave blank for Independent)"
-                      value={candidateParty}
-                      onChange={(e) => setCandidateParty(e.target.value)}
-                      disabled={loading || blockchainLoading || electionStatus.started}
-                      className="w-full border p-3 rounded-xl outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-400 transition-all text-sm"
-                      style={{
-                        backgroundColor: 'var(--bg-color)',
-                        color: 'var(--text-color)',
-                        borderColor: 'var(--border-color)',
-                      }}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--text-color)' }}>
-                    Candidate Photo (JPG / PNG)
-                  </label>
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/jpg"
-                    onChange={(e) => setCandidatePhoto(e.target.files[0] || null)}
-                    disabled={loading || blockchainLoading || electionStatus.started}
-                    className="w-full border p-2 rounded-xl text-sm outline-none transition-all file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                    style={{
-                      backgroundColor: 'var(--bg-color)',
-                      color: 'var(--text-color)',
-                      borderColor: 'var(--border-color)',
-                    }}
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={
-                    loading || blockchainLoading || electionStatus.started || !candidateName.trim()
-                  }
-                  className="bg-gray-900 hover:bg-black disabled:opacity-50 text-white font-bold py-3 px-8 rounded-xl transition-all flex items-center justify-center gap-2 text-sm shadow-md"
-                >
-                  <UserPlus className="w-4 h-4" />
-                  Add to Ballot
-                </button>
-              </form>
-            )}
-
-            {/* Candidates List */}
-            {candidates.length > 0 && (
-              <div className="mt-6 border rounded-xl overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
-                <table className="min-w-full divide-y divide-gray-100">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="py-3 px-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">ID</th>
-                      <th className="py-3 px-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Photo</th>
-                      <th className="py-3 px-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Candidate Name</th>
-                      <th className="py-3 px-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Party</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y" style={{ borderColor: 'var(--border-color)' }}>
-                    {candidates.map((candidate) => (
-                      <tr key={candidate.id} className="hover:bg-gray-50 transition-colors">
-                        <td className="py-3 px-4 text-sm font-medium text-gray-500">#{candidate.id}</td>
-                        <td className="py-3 px-4">
-                          {candidate.photoPath ? (
-                            <img
-                              src={`http://localhost:5000${candidate.photoPath}`}
-                              alt={candidate.name}
-                              className="w-9 h-9 rounded-full object-cover border border-gray-200"
-                            />
-                          ) : (
-                            <div className="w-9 h-9 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600">
-                              {candidate.name.charAt(0)}
-                            </div>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-sm font-semibold" style={{ color: 'var(--text-color)' }}>{candidate.name}</td>
-                        <td className="py-3 px-4 text-sm">
-                          <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
-                            {candidate.party || 'Independent'}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            <div className="mt-8 flex items-start gap-3 p-4 bg-blue-50 rounded-xl">
-              <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" />
-              <p className="text-sm text-blue-800">
-                Candidates must be added <strong>before</strong> starting the election. Every name is permanently recorded on the blockchain.
-              </p>
             </div>
-          </section>
-        </div>
-
-        {/* SEC A: PENDING USERS */}
-        <section
-          className="rounded-2xl shadow-sm border overflow-hidden transition-all"
-          style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}
-        >
-          <div
-            className="p-6 border-b flex items-center justify-between"
-            style={{ borderColor: 'var(--border-color)' }}
-          >
-            <div className="flex items-center gap-2">
-              <div className="p-2 bg-blue-50 rounded-lg">
-                <Users className="w-5 h-5 text-blue-600" />
-              </div>
-              <h2 className="text-xl font-bold" style={{ color: 'var(--text-color)' }}>
-                Voter Verification Requests
-              </h2>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="bg-gray-100 text-gray-600 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">
-                {users.length} Pending
-              </span>
-            </div>
-          </div>
-
-          {/* Election-active lock banner */}
-          {electionStatus.active && (
-            <div className="mx-6 mt-4 mb-2 flex items-center gap-3 bg-amber-50 border border-amber-300 text-amber-800 px-4 py-3 rounded-xl text-sm font-medium">
-              <AlertCircle className="w-5 h-5 flex-shrink-0 text-amber-500" />
-              <span>
-                <strong>Election is currently active.</strong> Approve, Reject, and Block actions are disabled while voting is in progress.
-              </span>
-            </div>
-          )}
-
-          <div className="overflow-x-auto">
-            {users.length === 0 ? (
-              <div className="py-20 text-center">
-                <div className="bg-gray-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <CheckCircle className="text-gray-300 w-8 h-8" />
-                </div>
-                <h3 className="text-gray-900 font-medium text-lg">All caught up!</h3>
-                <p className="text-gray-500">No pending voter approvals at the moment.</p>
-              </div>
-            ) : (
-              <table className="min-w-full divide-y divide-gray-100">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="py-4 px-6 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
-                      Applicant
-                    </th>
-                    <th className="py-4 px-6 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
-                      Contact Info
-                    </th>
-                    <th className="py-4 px-6 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
-                      ID Number
-                    </th>
-                    <th className="py-4 px-6 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
-                      Documents
-                    </th>
-                    <th className="py-4 px-6 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
-                      OCR Data
-                    </th>
-                    <th className="py-4 px-6 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
-                      Blockchain Wallet
-                    </th>
-                    <th className="py-4 px-6 text-center text-xs font-bold text-gray-500 uppercase tracking-wider">
-                      Decision
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y" style={{ borderColor: 'var(--border-color)' }}>
-                  {users.map((u) => (
-                    <React.Fragment key={u._id}>
-                      <tr className="hover:opacity-80 transition-colors">
-                        {/* Applicant */}
-                        <td className="py-4 px-6">
-                          <div className="font-semibold" style={{ color: 'var(--text-color)' }}>{u.name}</div>
-                          <div className="text-xs opacity-50 mt-0.5" style={{ color: 'var(--text-color)' }}>
-                            DOB: {u.dob || '—'}
-                          </div>
-                        </td>
-
-                        {/* Contact */}
-                        <td className="py-4 px-6 text-sm opacity-70" style={{ color: 'var(--text-color)' }}>
-                          {u.email}
-                        </td>
-
-                        {/* ID Number */}
-                        <td className="py-4 px-6 text-sm font-mono opacity-70" style={{ color: 'var(--text-color)' }}>
-                          {u.idNumber}
-                        </td>
-
-                        {/* Documents — Front + Back */}
-                        <td className="py-4 px-6">
-                          <div className="flex flex-col gap-1.5">
-                            {u.documentFrontPath ? (
-                              <button
-                                onClick={() => handleViewDocument(u.documentFrontPath, 'Front Side')}
-                                className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline focus:outline-none"
-                              >
-                                <FileText className="w-3.5 h-3.5" /> Front
-                              </button>
-                            ) : u.documentPath && u.documentPath !== 'pending_upload' ? (
-                              <button
-                                onClick={() => handleViewDocument(u.documentPath, 'Document')}
-                                className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline focus:outline-none"
-                              >
-                                <FileText className="w-3.5 h-3.5" /> View
-                              </button>
-                            ) : (
-                              <span className="text-xs opacity-40 italic" style={{ color: 'var(--text-color)' }}>No front</span>
-                            )}
-                            {u.documentBackPath ? (
-                              <button
-                                onClick={() => handleViewDocument(u.documentBackPath, 'Back Side')}
-                                className="flex items-center gap-1 text-xs font-medium text-indigo-600 hover:underline focus:outline-none"
-                              >
-                                <FileText className="w-3.5 h-3.5" /> Back
-                              </button>
-                            ) : (
-                              <span className="text-xs opacity-40 italic" style={{ color: 'var(--text-color)' }}>No back</span>
-                            )}
-                          </div>
-                        </td>
-
-                        {/* OCR Data — toggle button */}
-                        <td className="py-4 px-6">
-                          {u.ocrData ? (
-                            <button
-                              onClick={() => setExpandedOcrRow(expandedOcrRow === u._id ? null : u._id)}
-                              className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg border transition-colors ${
-                                u.ocrData.ocrSuccess
-                                  ? 'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100'
-                                  : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'
-                              }`}
-                            >
-                              <ScanLine className="w-3.5 h-3.5" />
-                              {u.ocrData.ocrSuccess ? 'View OCR' : 'OCR Failed'}
-                              {expandedOcrRow === u._id ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                            </button>
-                          ) : (
-                            <span className="text-xs opacity-40 italic" style={{ color: 'var(--text-color)' }}>No OCR</span>
-                          )}
-                        </td>
-
-                        {/* Wallet */}
-                        <td className="py-4 px-6">
-                          <div
-                            className="flex items-center gap-2 text-xs font-mono opacity-50 px-2 py-1 rounded-md w-fit"
-                            style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-color)' }}
-                          >
-                            <Wallet className="w-3 h-3" />
-                            {u.walletAddress
-                              ? `${u.walletAddress.slice(0, 6)}...${u.walletAddress.slice(-4)}`
-                              : 'N/A'}
-                          </div>
-                        </td>
-
-                        {/* Decision buttons */}
-                        <td className="py-4 px-6">
-                          <div className="flex justify-center items-center gap-3">
-                            <button
-                              onClick={() => handleApprove(u._id)}
-                              disabled={loading || !u.walletAddress || electionStatus.active}
-                              className="bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed text-white p-2 rounded-lg transition-all shadow-md shadow-emerald-100"
-                              title={electionStatus.active ? 'Cannot approve during an active election' : 'Approve & Register'}
-                            >
-                              <CheckCircle className="w-5 h-5" />
-                            </button>
-                            <button
-                              onClick={() =>
-                                setDialogConfig({ isOpen: true, type: 'reject', userId: u._id, reason: '' })
-                              }
-                              disabled={loading || electionStatus.active}
-                              className="bg-orange-500 hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed text-white p-2 rounded-lg transition-all shadow-md shadow-orange-100"
-                              title={electionStatus.active ? 'Cannot reject during an active election' : 'Reject Applicant'}
-                            >
-                              <XCircle className="w-5 h-5" />
-                            </button>
-                            <button
-                              onClick={() =>
-                                setDialogConfig({ isOpen: true, type: 'block', userId: u._id, reason: '' })
-                              }
-                              disabled={loading || electionStatus.active}
-                              className="bg-rose-600 hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed text-white p-2 rounded-lg transition-all shadow-md shadow-rose-200"
-                              title={electionStatus.active ? 'Cannot block during an active election' : 'Permanently Block'}
-                            >
-                              <AlertCircle className="w-5 h-5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-
-                      {/* ── OCR Expanded Panel ───────────────────── */}
-                      {expandedOcrRow === u._id && u.ocrData && (
-                        <tr>
-                          <td colSpan={7} className="px-6 pb-5 pt-0">
-                            <div className="rounded-xl border p-4" style={{ backgroundColor: 'var(--bg-color)', borderColor: 'var(--border-color)' }}>
-                              <div className="flex items-center gap-2 mb-3">
-                                <ScanLine className="w-4 h-4 text-violet-600" />
-                                <span className="text-sm font-bold" style={{ color: 'var(--text-color)' }}>OCR Extracted Data</span>
-                                {u.ocrData.confidence != null && (
-                                  <span className="ml-auto text-xs px-2 py-0.5 rounded-full font-semibold"
-                                    style={{ backgroundColor: u.ocrData.confidence >= 70 ? '#d1fae5' : '#fef3c7', color: u.ocrData.confidence >= 70 ? '#065f46' : '#92400e' }}
-                                  >
-                                    Confidence: {u.ocrData.confidence}%
-                                  </span>
-                                )}
-                              </div>
-
-                              {u.ocrData.ocrSuccess ? (
-                                <>
-                                  {/* User-entered data for reference */}
-                                  <div className="mb-3 p-3 rounded-lg bg-blue-50 border border-blue-100">
-                                    <p className="text-[10px] font-bold text-blue-600 uppercase tracking-wider mb-2">User-Entered Details</p>
-                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-1 text-xs">
-                                      <div><span className="text-blue-500 font-medium">Name:</span> <span className="font-semibold text-blue-900">{u.name}</span></div>
-                                      <div><span className="text-blue-500 font-medium">ID No:</span> <span className="font-semibold text-blue-900">{u.idNumber}</span></div>
-                                      <div><span className="text-blue-500 font-medium">DOB:</span> <span className="font-semibold text-blue-900">{u.dob}</span></div>
-                                    </div>
-                                  </div>
-
-                                  {/* OCR-extracted data */}
-                                  <div className="p-3 rounded-lg bg-violet-50 border border-violet-100">
-                                    <p className="text-[10px] font-bold text-violet-600 uppercase tracking-wider mb-2">Nepali Citizenship Certificate OCR Extracted Data</p>
-                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-2 text-xs">
-                                      <div>
-                                        <span className="text-violet-500 font-medium">Citizenship Number:</span>{' '}
-                                        <span className="font-semibold text-violet-900">{u.ocrData.citizenshipNumber ?? 'null'}</span>
-                                      </div>
-                                      <div>
-                                        <span className="text-violet-500 font-medium">Full Name:</span>{' '}
-                                        <span className="font-semibold text-violet-900">{u.ocrData.fullName ?? 'null'}</span>
-                                      </div>
-                                      <div>
-                                        <span className="text-violet-500 font-medium">Gender:</span>{' '}
-                                        <span className="font-semibold text-violet-900">{u.ocrData.gender ?? 'null'}</span>
-                                      </div>
-
-                                      {/* Date of Birth breakdown */}
-                                      <div>
-                                        <span className="text-violet-500 font-medium">DOB Year:</span>{' '}
-                                        <span className="font-semibold text-violet-900">{typeof u.ocrData.dateOfBirth === 'object' ? (u.ocrData.dateOfBirth?.year ?? 'null') : 'null'}</span>
-                                      </div>
-                                      <div>
-                                        <span className="text-violet-500 font-medium">DOB Month:</span>{' '}
-                                        <span className="font-semibold text-violet-900">{typeof u.ocrData.dateOfBirth === 'object' ? (u.ocrData.dateOfBirth?.month ?? 'null') : 'null'}</span>
-                                      </div>
-                                      <div>
-                                        <span className="text-violet-500 font-medium">DOB Day:</span>{' '}
-                                        <span className="font-semibold text-violet-900">{typeof u.ocrData.dateOfBirth === 'object' ? (u.ocrData.dateOfBirth?.day ?? 'null') : 'null'}</span>
-                                      </div>
-
-                                      {/* Birth Location */}
-                                      <div>
-                                        <span className="text-violet-500 font-medium">Birth District:</span>{' '}
-                                        <span className="font-semibold text-violet-900">{u.ocrData.birthDistrict ?? 'null'}</span>
-                                      </div>
-                                      <div>
-                                        <span className="text-violet-500 font-medium">Birth Municipality:</span>{' '}
-                                        <span className="font-semibold text-violet-900">{u.ocrData.birthMunicipality ?? 'null'}</span>
-                                      </div>
-                                      <div>
-                                        <span className="text-violet-500 font-medium">Birth Ward No:</span>{' '}
-                                        <span className="font-semibold text-violet-900">{u.ocrData.birthWardNo ?? 'null'}</span>
-                                      </div>
-
-                                      {/* Permanent Location */}
-                                      <div>
-                                        <span className="text-violet-500 font-medium">Permanent District:</span>{' '}
-                                        <span className="font-semibold text-violet-900">{u.ocrData.permanentDistrict ?? 'null'}</span>
-                                      </div>
-                                      <div>
-                                        <span className="text-violet-500 font-medium">Permanent Municipality:</span>{' '}
-                                        <span className="font-semibold text-violet-900">{u.ocrData.permanentMunicipality ?? 'null'}</span>
-                                      </div>
-                                      <div>
-                                        <span className="text-violet-500 font-medium">Permanent Ward No:</span>{' '}
-                                        <span className="font-semibold text-violet-900">{u.ocrData.permanentWardNo ?? 'null'}</span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </>
-                              ) : (
-                                <div className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg p-3">
-                                  <strong>OCR failed:</strong> {u.ocrData.ocrError || 'Unknown error'}
-                                </div>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </React.Fragment>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </section>
-
-        {/* SEC D: REGISTERED VOTERS */}
-        <section
-          className="rounded-2xl shadow-sm border overflow-hidden transition-all mt-8"
-          style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}
-        >
-          <div
-            className="p-6 border-b flex items-center justify-between"
-            style={{ borderColor: 'var(--border-color)' }}
-          >
-            <div className="flex items-center gap-2">
-              <div className="p-2 bg-emerald-50 rounded-lg">
-                <ShieldCheck className="w-5 h-5 text-emerald-600" />
-              </div>
-              <h2 className="text-xl font-bold" style={{ color: 'var(--text-color)' }}>
-                Registered Voters Registry
-              </h2>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="bg-emerald-100 text-emerald-700 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">
-                {registeredUsers.length} Registered
-              </span>
-            </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            {registeredUsers.length === 0 ? (
-              <div className="py-20 text-center">
-                <div className="bg-gray-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <CheckCircle className="text-gray-300 w-8 h-8" />
-                </div>
-                <h3 className="text-gray-900 font-medium text-lg">No registered voters</h3>
-                <p className="text-gray-500">Voters will appear here once approved by an administrator.</p>
-              </div>
-            ) : (
-              <table className="min-w-full divide-y divide-gray-100">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="py-4 px-6 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
-                      Voter Name
-                    </th>
-                    <th className="py-4 px-6 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
-                      Contact Info
-                    </th>
-                    <th className="py-4 px-6 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
-                      ID Number
-                    </th>
-                    <th className="py-4 px-6 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
-                      Linked Wallet Address
-                    </th>
-                    <th className="py-4 px-6 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
-                      Approval Tx Hash
-                    </th>
-                    <th className="py-4 px-6 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
-                      Sync Status / History
-                    </th>
-                    <th className="py-4 px-6 text-center text-xs font-bold text-gray-500 uppercase tracking-wider">
-                      Action
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y" style={{ borderColor: 'var(--border-color)' }}>
-                  {registeredUsers.map((u) => {
-                    const latestSync = u.syncHistory && u.syncHistory.length > 0
-                      ? u.syncHistory[u.syncHistory.length - 1]
-                      : null;
-                    return (
-                      <tr key={u._id} className="hover:opacity-90 transition-colors">
-                        <td className="py-4 px-6">
-                          <div className="font-semibold" style={{ color: 'var(--text-color)' }}>
-                            {u.name}
-                          </div>
-                        </td>
-                        <td className="py-4 px-6 text-sm opacity-70" style={{ color: 'var(--text-color)' }}>
-                          {u.email}
-                        </td>
-                        <td className="py-4 px-6 text-sm font-mono opacity-70" style={{ color: 'var(--text-color)' }}>
-                          {u.idNumber}
-                        </td>
-                        <td className="py-4 px-6">
-                          <div
-                            className="flex items-center gap-2 text-xs font-mono opacity-50 px-2 py-1 rounded-md w-fit"
-                            style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-color)' }}
-                          >
-                            <Wallet className="w-3 h-3" />
-                            {u.walletAddress
-                              ? `${u.walletAddress.slice(0, 6)}...${u.walletAddress.slice(-4)}`
-                              : 'N/A'}
-                          </div>
-                        </td>
-                        <td className="py-4 px-6 text-xs font-mono opacity-50" style={{ color: 'var(--text-color)' }}>
-                          {u.txHash ? (
-                            <span className="truncate max-w-[120px] inline-block" title={u.txHash}>
-                              {u.txHash.slice(0, 10)}...{u.txHash.slice(-8)}
-                            </span>
-                          ) : (
-                            <span className="text-gray-400 italic">No Tx Hash</span>
-                          )}
-                        </td>
-                        <td className="py-4 px-6">
-                          {latestSync ? (
-                            <div className="space-y-1">
-                              <span className="text-green-600 font-semibold text-xs flex items-center gap-1">
-                                <CheckCircle className="w-3 h-3" /> Synced
-                              </span>
-                              <div className="text-[10px] text-gray-500 font-mono" title={latestSync.txHash}>
-                                Tx: {latestSync.txHash.slice(0, 8)}...{latestSync.txHash.slice(-6)}
-                              </div>
-                              <div className="text-[9px] text-gray-400">
-                                {new Date(latestSync.syncedAt).toLocaleString()}
-                              </div>
-                            </div>
-                          ) : (
-                            <span className="text-amber-500 font-semibold text-xs flex items-center gap-1">
-                              <AlertCircle className="w-3 h-3" /> Never Synced
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-4 px-6 text-center">
-                          <button
-                            onClick={() => handleSyncToBlockchain(u._id)}
-                            disabled={loading || !u.walletAddress || !currentAccount}
-                            className="flex items-center justify-center gap-1 mx-auto bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold py-2 px-3 rounded-lg transition-all shadow-md shadow-blue-100"
-                          >
-                            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-                            Sync to Blockchain
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </section>
-
-        {/* SEC E: ELECTION RESULTS — shown only when election has ended */}
-        {electionStatus.started && !electionStatus.active && (
-          <section
-            className="rounded-2xl shadow-sm border overflow-hidden transition-all mt-8"
-            style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}
-          >
-            <div
-              className="p-6 border-b flex items-center justify-between"
-              style={{ borderColor: 'var(--border-color)' }}
+            <Link
+              to={`/elections/${electionId}/setup`}
+              className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs px-4 py-2 rounded-xl flex-shrink-0 transition-all shadow"
             >
-              <div className="flex items-center gap-2">
-                <div className="p-2 bg-yellow-50 rounded-lg">
-                  <Trophy className="w-5 h-5 text-yellow-500" />
-                </div>
-                <h2 className="text-xl font-bold" style={{ color: 'var(--text-color)' }}>
-                  Election Results
-                </h2>
+              Go to Setup Checklist →
+            </Link>
+          </div>
+        )}
+
+        {/* Header & Controls */}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-6 border-b border-black/5 dark:border-white/5">
+          <div>
+            <span className="text-xs font-mono font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-950 px-2.5 py-1 rounded">
+              Super Admin Console (Election #{electionId})
+            </span>
+            <h1 className="text-3xl font-extrabold mt-1" style={{ color: 'var(--text-color)' }}>
+              {electionInfo?.title || `Election #${electionId}`}
+            </h1>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {!electionStatus.started ? (
+              <button
+                onClick={() => startElection(electionId)}
+                disabled={blockchainLoading || loading || isDraft}
+                className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white font-bold px-5 py-2.5 rounded-xl shadow-lg hover:shadow-emerald-500/25 transition-all text-sm flex items-center gap-2"
+                title={isDraft ? 'Open registration first' : 'Start election voting period'}
+              >
+                <Play className="w-4 h-4" /> Start Election
+              </button>
+            ) : electionStatus.active ? (
+              <button
+                onClick={() => endElection(electionId)}
+                disabled={blockchainLoading || loading}
+                className="bg-red-600 hover:bg-red-700 text-white font-bold px-5 py-2.5 rounded-xl shadow-lg hover:shadow-red-500/25 transition-all text-sm flex items-center gap-2"
+              >
+                <Square className="w-4 h-4" /> End Election
+              </button>
+            ) : (
+              <span className="px-4 py-2 bg-gray-200 dark:bg-gray-800 text-gray-800 dark:text-gray-200 font-bold text-sm rounded-xl">
+                ELECTION CONCLUDED
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Overview Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+          {/* Accepted Registration Verifiers Card */}
+          <div className="rounded-2xl border p-6 shadow-md" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold flex items-center gap-2" style={{ color: 'var(--text-color)' }}>
+                <UserCheck className="w-5 h-5 text-purple-600" /> Authorized Verifiers
+              </h3>
+              <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200">
+                {(electionInfo?.verifiers || []).length} On-Chain
+              </span>
+            </div>
+            <p className="text-xs opacity-70 mb-4" style={{ color: 'var(--text-color)' }}>
+              Wallet addresses authorized on-chain to verify OCR citizenship documents for this election.
+            </p>
+
+            {(electionInfo?.verifiers || []).length === 0 ? (
+              <div className="text-xs opacity-60 p-4 text-center rounded-xl bg-black/5 dark:bg-white/5">
+                No verifiers have accepted invitations yet.
               </div>
-              <span className="bg-red-100 text-red-700 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">
-                Election Closed
+            ) : (
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {electionInfo.verifiers.map((v) => (
+                  <div key={v} className="flex items-center justify-between p-2.5 rounded-xl bg-black/5 dark:bg-white/5 text-xs font-mono">
+                    <span className="truncate max-w-[240px]">{v}</span>
+                    <button
+                      onClick={() => handleRemoveVerifier(v)}
+                      disabled={loading}
+                      className="text-red-500 hover:text-red-700 p-1 transition-colors"
+                      title="Remove verifier from blockchain"
+                    >
+                      <UserMinus className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Candidates Read-Only Overview Card */}
+          <div className="rounded-2xl border p-6 shadow-md" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold flex items-center gap-2" style={{ color: 'var(--text-color)' }}>
+                <Award className="w-5 h-5 text-emerald-600" /> Election Candidates
+              </h3>
+              <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                {(candidateList || []).length} Registered
               </span>
             </div>
 
-            <div className="p-6 space-y-4">
-              {/* Winner Banner */}
-              {winner && (
-                <div className="flex items-center gap-5 p-5 bg-yellow-50 border-2 border-yellow-300 rounded-xl shadow">
-                  <div className="bg-yellow-400 p-4 rounded-full">
-                    <Trophy className="w-7 h-7 text-yellow-900" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-yellow-700 uppercase tracking-widest mb-1">🏆 Winner</p>
-                    <p className="text-2xl font-extrabold text-yellow-900">{winner}</p>
-                  </div>
-                  <div className="ml-auto text-right">
-                    <p className="text-xs text-yellow-700 opacity-70">Total votes</p>
-                    <p className="text-2xl font-black text-yellow-900">
-                      {candidates.reduce((sum, c) => sum + Number(c.voteCount), 0)}
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* Ranked Results */}
-              {(() => {
-                const totalVotes = candidates.reduce((sum, c) => sum + Number(c.voteCount), 0);
-                const sorted = [...candidates].sort((a, b) => Number(b.voteCount) - Number(a.voteCount));
-                const barColors = ['bg-yellow-400', 'bg-slate-400', 'bg-orange-400', 'bg-blue-400', 'bg-purple-400'];
-                const rankColors = ['text-yellow-500', 'text-gray-400', 'text-orange-400'];
-                return sorted.map((c, index) => {
-                  const pct = totalVotes > 0 ? (Number(c.voteCount) / totalVotes) * 100 : 0;
-                  return (
-                    <div
-                      key={c.id}
-                      className="p-4 rounded-xl"
-                      style={{ backgroundColor: 'var(--bg-color)' }}
-                    >
-                      <div className="flex items-center gap-3 mb-2">
-                        <span className={`text-lg font-black min-w-[2rem] ${rankColors[index] ?? 'text-gray-300'}`}>
-                          #{index + 1}
-                        </span>
-                        {c.photoPath ? (
-                          <img
-                            src={`http://localhost:5000${c.photoPath}`}
-                            alt={c.name}
-                            className="w-10 h-10 rounded-full object-cover border border-gray-200"
-                          />
-                        ) : (
-                          <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600">
-                            {c.name.charAt(0)}
-                          </div>
-                        )}
-                        <div className="flex-1">
-                          <div className="font-semibold flex items-center gap-2" style={{ color: 'var(--text-color)' }}>
-                            {c.name}
-                          </div>
-                          <div className="text-xs text-blue-600 font-medium">
-                            {c.party || 'Independent'}
-                          </div>
-                        </div>
-                        <span className="font-bold" style={{ color: 'var(--text-color)' }}>{c.voteCount} votes</span>
-                        <span className="text-sm opacity-60 w-10 text-right" style={{ color: 'var(--text-color)' }}>
-                          {Math.round(pct)}%
-                        </span>
-                      </div>
-                      <div className="w-full h-3 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--border-color)' }}>
-                        <div
-                          className={`h-full rounded-full transition-all duration-700 ${barColors[index] ?? 'bg-blue-400'}`}
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                    </div>
-                  );
-                });
-              })()}
-
-              {candidates.length === 0 && (
-                <p className="text-center py-8 opacity-50" style={{ color: 'var(--text-color)' }}>No candidates found.</p>
-              )}
-            </div>
-          </section>
-        )}
-      </div>
-
-      {/* Reusable Confirm Dialog */}
-      <ConfirmDialog
-        isOpen={dialogConfig.isOpen && dialogConfig.type === 'reject'}
-        onClose={closeDialog}
-        onConfirm={executeReject}
-        title="Reject Registration"
-        message="Please provide a reason for rejecting this user. They will be able to see this reason and resubmit."
-        confirmText="Reject Applicant"
-        danger={true}
-        input={{
-          label: 'Reason for rejection:',
-          placeholder: 'e.g. ID document is blurry',
-          value: dialogConfig.reason,
-          onChange: (val) => setDialogConfig((prev) => ({ ...prev, reason: val })),
-        }}
-      />
-
-      <ConfirmDialog
-        isOpen={dialogConfig.isOpen && dialogConfig.type === 'block'}
-        onClose={closeDialog}
-        onConfirm={executeBlock}
-        title="Permanently Block User"
-        message="Are you sure you want to PERMANENTLY BLOCK this user? They will be barred from the system forever. This action cannot be undone."
-        confirmText="Block User"
-        danger={true}
-      />
-
-      <ConfirmDialog
-        isOpen={dialogConfig.isOpen && dialogConfig.type === 'endElection'}
-        onClose={closeDialog}
-        onConfirm={executeEndElection}
-        title="End Election"
-        message="Are you sure you want to close the election? No more votes can be cast after this."
-        confirmText="Confirm End Election"
-        danger={true}
-      />
-
-      {/* Document Viewer Modal */}
-      {selectedDocument && (
-        <div 
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 transition-all duration-300"
-          onClick={() => setSelectedDocument(null)}
-          style={{ animation: 'fadeIn 0.2s ease-out' }}
-        >
-          <div 
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh]"
-            onClick={(e) => e.stopPropagation()}
-            style={{ animation: 'scaleIn 0.2s ease-out' }}
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b">
-              <h3 className="text-lg font-bold flex items-center gap-2 text-gray-800">
-                <FileText className="w-5 h-5 text-blue-600" />
-                {selectedDocument.label ? `Document Viewer — ${selectedDocument.label}` : 'Document Viewer'}
-              </h3>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    const filename = selectedDocument.url.split(/[\\/]/).pop();
-                    handleDownload(selectedDocument.url, filename);
-                  }}
-                  className="flex items-center gap-1 bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
-                >
-                  <Download className="w-4 h-4" />
-                  Download
-                </button>
-                <button 
-                  onClick={() => setSelectedDocument(null)}
-                  className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors text-gray-500 hover:text-red-500"
-                  title="Close (❌)"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+            {(candidateList || []).length === 0 ? (
+              <div className="text-xs opacity-60 p-4 text-center rounded-xl bg-black/5 dark:bg-white/5">
+                No candidates added yet. Add candidates in the <Link to={`/elections/${electionId}/setup`} className="text-indigo-600 font-bold underline">Setup Checklist</Link>.
               </div>
-            </div>
-            
-            {/* Content */}
-            <div className="flex-1 overflow-auto bg-gray-50 p-4 flex items-center justify-center min-h-[50vh]">
-              {selectedDocument.type === 'pdf' ? (
-                <iframe 
-                  src={selectedDocument.url} 
-                  className="w-full h-[70vh] rounded shadow-sm border border-gray-200"
-                  title="Document PDF Viewer"
-                />
-              ) : (
-                <img 
-                  src={selectedDocument.url} 
-                  alt="User Document" 
-                  className="max-w-full max-h-[70vh] object-contain rounded shadow-sm border border-gray-200"
-                />
-              )}
-            </div>
+            ) : (
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {candidateList.map((c) => (
+                  <div key={c.id} className="flex items-center justify-between p-2.5 rounded-xl bg-black/5 dark:bg-white/5 text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center text-[10px]">
+                        {c.id}
+                      </span>
+                      <span className="font-bold">{c.name}</span>
+                    </div>
+                    <span className="opacity-60">{c.party || 'Independent'}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-          
-          <style>{`
-            @keyframes fadeIn {
-              from { opacity: 0; }
-              to { opacity: 1; }
-            }
-            @keyframes scaleIn {
-              from { opacity: 0; transform: scale(0.95); }
-              to { opacity: 1; transform: scale(1); }
-            }
-          `}</style>
+
         </div>
-      )}
+      </main>
     </div>
   );
 };

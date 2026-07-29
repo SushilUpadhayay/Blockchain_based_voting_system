@@ -9,17 +9,16 @@ import { ROUTES, getDashboardConfig } from '../constants';
 const AUTH_PAGES = [ROUTES.LOGIN, ROUTES.REGISTER, ROUTES.UPLOAD, ROUTES.VERIFY_OTP];
 
 const Navbar = () => {
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const location = useLocation();
 
   const isAuthPage = AUTH_PAGES.includes(location.pathname);
-  const dashConfig = getDashboardConfig(user);
 
   return (
     <nav className="border-b px-6 py-4 flex justify-between items-center sticky top-0 z-10 shadow-sm transition-colors duration-300" 
          style={{ backgroundColor: 'var(--nav-bg)', borderColor: 'var(--border-color)' }}>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-6">
         <Link to={ROUTES.HOME} className="flex items-center gap-2">
           <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
             <Activity className="text-white w-5 h-5" />
@@ -39,14 +38,7 @@ const Navbar = () => {
         </button>
 
         {isAuthenticated ? (
-          <>
-            {!isAuthPage && (
-              <Link to={dashConfig.to} className={dashConfig.className}>
-                {dashConfig.label}
-              </Link>
-            )}
-            <LogoutButton variant="full" />
-          </>
+          <LogoutButton variant="full" />
         ) : (
           !isAuthPage && (
             <>

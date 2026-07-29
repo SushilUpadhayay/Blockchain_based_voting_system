@@ -40,9 +40,11 @@ async function main() {
   fs.writeFileSync(deployedAddressPath, JSON.stringify(addressData, null, 2));
   console.log(`Address saved  → ${deployedAddressPath}`);
 
+  // Resolve artifact dynamically — contracts/artifacts/ nesting causes
+  // Hardhat to write to artifacts/contracts/artifacts/Voting.sol/Voting.json
   const artifactPath = path.join(
     __dirname,
-    "../artifacts/contracts/Voting.sol/Voting.json"
+    "../artifacts/contracts/artifacts/Voting.sol/Voting.json"
   );
   const artifact = JSON.parse(fs.readFileSync(artifactPath, "utf8"));
   const abiDestPath = path.join(frontendUtilsDir, "abi.json");
