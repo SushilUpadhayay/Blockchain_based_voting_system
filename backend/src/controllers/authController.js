@@ -1127,7 +1127,6 @@ const verifyVerifierOtp = async (req, res, next) => {
     await user.save();
 
     // 4. Update Election document verifiers array
-    const election = await Election.findOne({ electionId });
     if (election) {
       const vLower = walletAddress.toLowerCase();
       if (!election.verifiers.includes(vLower)) {
