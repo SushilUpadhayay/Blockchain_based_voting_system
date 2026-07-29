@@ -55,7 +55,7 @@ const createElection = async (req, res, next) => {
     const voterRosterEntry = await VoterRoster.findOne({ email: cleanUserEmail });
     if (voterRosterEntry) {
       res.status(409);
-      throw new Error('This email is already reserved as a voter and cannot be used as a Super Admin.');
+      throw new Error('This email is already reserved as a voter and cannot be used as an Election Administrator.');
     }
 
     const verifierInvite = await VerifierInvite.findOne({
@@ -64,7 +64,7 @@ const createElection = async (req, res, next) => {
     });
     if (verifierInvite) {
       res.status(409);
-      throw new Error('This email is already reserved as a Registration Verifier and cannot be used as a Super Admin.');
+      throw new Error('This email is already reserved as a Registration Verifier and cannot be used as an Election Administrator.');
     }
 
     const superAdminWallet = req.user?.walletAddress || process.env.PUBLIC_KEY;
@@ -177,14 +177,23 @@ const getVerifierInviteByToken = async (req, res, next) => {
       throw new Error('This verifier invitation has already been accepted.');
     }
 
-    if (invite.expiresAt < new Date()) {
-      invite.status = 'expired';
-      await invite.save();
+    if (invite.status === 'revoked') {
       res.status(400);
-      throw new Error('This verifier invitation link has expired.');
+      throw new Error('This verifier invitation has been revoked.');
     }
 
     const election = await Election.findOne({ electionId: invite.electionId });
+    const regEndDate = election?.registrationPeriod?.endDate ? new Date(election.registrationPeriod.endDate) : null;
+    const isExpired = (regEndDate && new Date() > regEndDate) || (invite.expiresAt && new Date() > new Date(invite.expiresAt));
+
+    if (isExpired) {
+      if (invite.status !== 'expired') {
+        invite.status = 'expired';
+        await invite.save();
+      }
+      res.status(400);
+      throw new Error('This verifier invitation link has expired because the election registration period has ended.');
+    }
 
     res.json({
       electionId: invite.electionId,
@@ -200,7 +209,7 @@ const getVerifierInviteByToken = async (req, res, next) => {
 
 // @desc    Get setup summary metrics for Election Setup dashboard
 // @route   GET /api/elections/:electionId/setup-summary
-// @access  Private/SuperAdmin
+// @access  Private/Election Administrator
 const getSetupSummary = async (req, res, next) => {
   try {
     const electionId = Number(req.params.electionId);
@@ -266,7 +275,7 @@ const getElectionById = async (req, res, next) => {
 
 // @desc    Upload Excel voter roster (import only — no emails, no status flip)
 // @route   POST /api/elections/:electionId/roster/upload
-// @access  Private/SuperAdmin
+// @access  Private/Election Administrator
 const uploadVoterRoster = async (req, res, next) => {
   try {
     const electionId = Number(req.params.electionId);
@@ -297,12 +306,13 @@ const uploadVoterRoster = async (req, res, next) => {
      * NOTE: header matching is case-sensitive (xlsx preserves header text exactly).
      * Only the variants listed here are recognised.
      *
-     * Required columns (all five must be present and non-empty for each row):
+     * Required columns (all six must be present and non-empty for each row):
      *   email            → email | Email | Email Address | EMAIL
      *   Full Name        → fullName | name | Full Name | Name
      *   Employee ID      → employeeId | id | Employee ID | Student ID
      *   Citizenship No.  → citizenshipNumber | Citizenship Number | Citizenship No | CitizenshipNo
      *   Date of Birth    → dateOfBirth | Date of Birth | DOB | DateOfBirth
+     *   Address          → address | Address | Permanent Address | PermanentAddress
      */
     const pick = (row, ...keys) => {
       for (const k of keys) {
@@ -327,6 +337,7 @@ const uploadVoterRoster = async (req, res, next) => {
       const employeeId      = pick(row, 'employeeId', 'id', 'Employee ID', 'Student ID');
       const citizenshipNum  = pick(row, 'citizenshipNumber', 'Citizenship Number', 'Citizenship No', 'CitizenshipNo');
       const dateOfBirth     = pick(row, 'dateOfBirth', 'Date of Birth', 'DOB', 'DateOfBirth');
+      const address         = pick(row, 'address', 'Address', 'Permanent Address', 'PermanentAddress');
 
       const missing = [];
 
@@ -341,6 +352,7 @@ const uploadVoterRoster = async (req, res, next) => {
       if (!employeeId)     missing.push('Employee ID');
       if (!citizenshipNum) missing.push('Citizenship Number');
       if (!dateOfBirth)    missing.push('Date of Birth');
+      if (!address)        missing.push('Address');
 
       if (missing.length > 0) {
         rowErrors.push({
@@ -378,6 +390,7 @@ const uploadVoterRoster = async (req, res, next) => {
         employeeId,
         citizenshipNumber: citizenshipNum,
         dateOfBirth,
+        address,
       });
     });
 
@@ -436,6 +449,7 @@ const uploadVoterRoster = async (req, res, next) => {
           employeeId: r.employeeId,
           citizenshipNumber: r.citizenshipNumber,
           dateOfBirth: r.dateOfBirth,
+          address: r.address,
           // NOTE: invitationSent is NOT reset — preserves sent-state for re-uploads
         },
         { upsert: true, new: true }
@@ -457,7 +471,7 @@ const uploadVoterRoster = async (req, res, next) => {
 
 // @desc    Open registration: flip status draft→registration_open, send invite emails to unsent roster rows
 // @route   POST /api/elections/:electionId/open-registration
-// @access  Private/SuperAdmin
+// @access  Private/Election Administrator
 const openRegistration = async (req, res, next) => {
   try {
     const electionId = Number(req.params.electionId);
@@ -525,7 +539,7 @@ const openRegistration = async (req, res, next) => {
 
 // @desc    Save off-chain candidate metadata (party, photo) after candidate is added on-chain via MetaMask
 // @route   POST /api/elections/:electionId/candidates
-// @access  Private/SuperAdmin
+// @access  Private/Election Administrator
 const addCandidate = async (req, res, next) => {
   try {
     const electionId = Number(req.params.electionId);
@@ -589,7 +603,7 @@ const getCandidates = async (req, res, next) => {
 
 // @desc    Invite Registration Verifier (Name + Email, creates pending VerifierInvite)
 // @route   POST /api/elections/:electionId/verifiers
-// @access  Private/SuperAdmin
+// @access  Private/Election Administrator
 const assignVerifier = async (req, res, next) => {
   try {
     const electionId = Number(req.params.electionId);
@@ -607,6 +621,11 @@ const assignVerifier = async (req, res, next) => {
       throw new Error('Election not found');
     }
 
+    if (election.registrationPeriod?.endDate && new Date() > new Date(election.registrationPeriod.endDate)) {
+      res.status(400);
+      throw new Error('Cannot issue verifier invitations after the election registration period has ended.');
+    }
+
     const existingUser = await User.findOne({ email: cleanEmail });
     assertUserCanUseRole(existingUser, 'verifier', res);
 
@@ -616,8 +635,12 @@ const assignVerifier = async (req, res, next) => {
       throw new Error('This email is already reserved as a voter and cannot be used as a Registration Verifier.');
     }
 
-    // Create or update pending invitation with fresh token
+    // Create or update pending invitation with fresh token and cryptographically secure one-time inviteCode
     const inviteToken = crypto.randomBytes(16).toString('hex');
+    const rawInviteCode = crypto.randomBytes(4).toString('hex').toUpperCase();
+    const hashedInviteCode = VerifierInvite.hashInviteCode(rawInviteCode);
+    const expiresAt = election.registrationPeriod?.endDate ? new Date(election.registrationPeriod.endDate) : null;
+
     const inviteDoc = await VerifierInvite.findOneAndUpdate(
       { electionId, email: cleanEmail },
       {
@@ -625,8 +648,10 @@ const assignVerifier = async (req, res, next) => {
         name: name.trim(),
         email: cleanEmail,
         token: inviteToken,
+        hashedInviteCode,
+        codeAttempts: 0,
         status: 'pending',
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        expiresAt,
       },
       { upsert: true, new: true }
     );
@@ -641,6 +666,7 @@ const assignVerifier = async (req, res, next) => {
     res.json({
       message: `Invitation email successfully dispatched to ${cleanEmail}`,
       inviteToken: inviteDoc.token,
+      inviteCode: rawInviteCode,
     });
   } catch (error) {
     next(error);
@@ -649,7 +675,7 @@ const assignVerifier = async (req, res, next) => {
 
 // @desc    Remove Registration Verifier (Updates DB after MetaMask removal on frontend)
 // @route   DELETE /api/elections/:electionId/verifiers/:verifierAddress
-// @access  Private/SuperAdmin
+// @access  Private/Election Administrator
 const removeVerifier = async (req, res, next) => {
   try {
     const electionId = Number(req.params.electionId);
@@ -675,7 +701,7 @@ const removeVerifier = async (req, res, next) => {
 
 // @desc    On-demand sync: Reconciles MongoDB election state with EVM smart contract state
 // @route   POST /api/elections/:electionId/sync-blockchain
-// @access  Private/Verifier/SuperAdmin
+// @access  Private/Verifier/Election Administrator
 const syncElectionFromChain = async (req, res, next) => {
   try {
     const electionId = Number(req.params.electionId);
@@ -727,7 +753,7 @@ const syncElectionFromChain = async (req, res, next) => {
 
 // @desc    Start election (Updates DB status after MetaMask transaction confirms on-chain)
 // @route   POST /api/elections/:electionId/start
-// @access  Private/SuperAdmin
+// @access  Private/Election Administrator
 const startElection = async (req, res, next) => {
   try {
     const electionId = Number(req.params.electionId);
@@ -746,7 +772,7 @@ const startElection = async (req, res, next) => {
 
 // @desc    End election (Updates DB status after MetaMask transaction confirms on-chain)
 // @route   POST /api/elections/:electionId/end
-// @access  Private/SuperAdmin
+// @access  Private/Election Administrator
 const endElection = async (req, res, next) => {
   try {
     const electionId = Number(req.params.electionId);

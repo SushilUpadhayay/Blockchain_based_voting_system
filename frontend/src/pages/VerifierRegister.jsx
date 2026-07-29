@@ -11,6 +11,7 @@ import {
   Loader2,
   CheckCircle2,
   AlertTriangle,
+  Key,
 } from 'lucide-react';
 import API from '../api/api';
 import { useAuth } from '../context/AuthContext';
@@ -35,7 +36,7 @@ const VerifierRegister = () => {
   const [error, setError] = useState('');
 
   // Step 2 form
-  const [formData, setFormData] = useState({ name: '', phone: '', password: '', confirmPassword: '' });
+  const [formData, setFormData] = useState({ name: '', phone: '', inviteCode: '', password: '', confirmPassword: '' });
   // Step 4 OTP
   const [otp, setOtp] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -63,6 +64,7 @@ const VerifierRegister = () => {
     e.preventDefault();
     if (!formData.name.trim()) return toast.error('Name is required.');
     if (!formData.phone.trim()) return toast.error('Phone number is required.');
+    if (!formData.inviteCode.trim()) return toast.error('One-time invitation code is required.');
     if (!formData.password || formData.password.length < 8)
       return toast.error('Password must be at least 8 characters.');
     if (formData.password !== formData.confirmPassword)
@@ -93,9 +95,10 @@ const VerifierRegister = () => {
       toast.success('Wallet connected and signed!', { id: 'wallet' });
       setStep(STEPS.OTP);
 
-      // Trigger registerVerifierInit — sends OTP, validates invite + signature server-side
+      // Trigger registerVerifierInit — sends OTP, validates invite + code + signature server-side
       await API.post('/auth/register-verifier-init', {
         inviteToken: token,
+        inviteCode: formData.inviteCode.trim().toUpperCase(),
         name: formData.name.trim(),
         phone: formData.phone.trim(),
         password: formData.password,
@@ -242,6 +245,25 @@ const VerifierRegister = () => {
                   className="w-full px-4 py-2.5 rounded-xl border text-sm outline-none"
                   style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-color)', borderColor: 'var(--border-color)' }}
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold mb-1.5" style={{ color: 'var(--text-color)' }}>
+                  <Key className="w-4 h-4 inline mr-1 text-indigo-500" />One-Time Invitation Code *
+                </label>
+                <input
+                  type="text"
+                  value={formData.inviteCode}
+                  onChange={(e) => setFormData({ ...formData, inviteCode: e.target.value.toUpperCase() })}
+                  placeholder="e.g. A7X9K3M2"
+                  required
+                  maxLength={12}
+                  className="w-full px-4 py-2.5 rounded-xl border text-sm font-mono tracking-wider outline-none uppercase"
+                  style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-color)', borderColor: 'var(--border-color)' }}
+                />
+                <p className="text-xs opacity-50 mt-1" style={{ color: 'var(--text-color)' }}>
+                  Enter the secret invitation code provided by your Election Administrator.
+                </p>
               </div>
 
               <div>

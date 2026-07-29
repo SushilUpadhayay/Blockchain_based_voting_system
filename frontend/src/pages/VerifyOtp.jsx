@@ -19,7 +19,15 @@ const VerifyOtp = () => {
 
   // If user is already logged in and verified, prevent access to this page
   if (isAuthenticated && user?.isVerified && !email) {
-    return <Navigate to={user.role === 'admin' ? ROUTES.ADMIN : ROUTES.DASHBOARD} replace />;
+    if (user.role === 'admin') {
+      const firstAdminRole = user.adminRoles?.[0];
+      const targetElectionId = firstAdminRole?.electionId || 1;
+      const targetPath = firstAdminRole?.role === 'verifier'
+        ? `/elections/${targetElectionId}/verifier`
+        : `/elections/${targetElectionId}/admin`;
+      return <Navigate to={targetPath} replace />;
+    }
+    return <Navigate to={ROUTES.DASHBOARD} replace />;
   }
 
   const handleSubmit = async (e) => {

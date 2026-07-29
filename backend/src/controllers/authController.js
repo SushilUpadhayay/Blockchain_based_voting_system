@@ -862,26 +862,64 @@ const adminLoginInit = async (req, res, next) => {
 // @access  Public
 const registerVerifierInit = async (req, res, next) => {
   try {
-    const { inviteToken, name, phone, password, walletAddress, signature, message } = req.body;
+    const { inviteToken, inviteCode, name, phone, password, walletAddress, signature, message } = req.body;
     const cleanName = String(name || '').trim();
     const cleanPhone = String(phone || '').trim();
+    const cleanInviteCode = String(inviteCode || '').trim().toUpperCase();
 
-    if (!inviteToken || !cleanName || !cleanPhone || !walletAddress || !signature || !message || !password) {
+    if (!inviteToken || !cleanInviteCode || !cleanName || !cleanPhone || !walletAddress || !signature || !message || !password) {
       res.status(400);
-      throw new Error('Verifier name, phone, invitation token, password, wallet address, signature, and message are all required');
+      throw new Error('Verifier name, phone, invitation token, invitation code, password, wallet address, signature, and message are all required');
     }
 
     // 1. Validate invite
     const invite = await VerifierInvite.findOne({ token: inviteToken, status: 'pending' });
-    if (!invite || invite.expiresAt < new Date()) {
+    if (!invite) {
       res.status(400);
       throw new Error('Invalid or expired verifier invitation');
+    }
+
+    const election = await Election.findOne({ electionId: invite.electionId });
+    const regEndDate = election?.registrationPeriod?.endDate ? new Date(election.registrationPeriod.endDate) : null;
+    const isExpired = (regEndDate && new Date() > regEndDate) || (invite.expiresAt && new Date() > new Date(invite.expiresAt));
+
+    if (isExpired) {
+      if (invite.status !== 'expired') {
+        invite.status = 'expired';
+        await invite.save();
+      }
+      res.status(400);
+      throw new Error('This verifier invitation link has expired because the election registration period has ended.');
+    }
+
+    // 2. Validate one-time invitation code using constant-time hash comparison and 5-attempt limit
+    if (invite.codeAttempts >= 5) {
+      if (invite.status !== 'revoked') {
+        invite.status = 'revoked';
+        await invite.save();
+      }
+      res.status(403);
+      throw new Error('Too many failed invitation code attempts. This verifier invitation has been locked for security.');
+    }
+
+    const isMatch = VerifierInvite.verifyInviteCode(cleanInviteCode, invite.hashedInviteCode);
+    if (!isMatch) {
+      invite.codeAttempts = (invite.codeAttempts || 0) + 1;
+      if (invite.codeAttempts >= 5) {
+        invite.status = 'revoked';
+        await invite.save();
+        res.status(403);
+        throw new Error('Too many failed invitation code attempts. This verifier invitation has been locked for security.');
+      }
+      await invite.save();
+      res.status(400);
+      throw new Error(`Invalid one-time invitation code. ${5 - invite.codeAttempts} attempts remaining.`);
     }
 
     const email = normalizeEmail(invite.email);
     const cleanWallet = normalizeWallet(walletAddress);
 
-    // 2. Verify cryptographic wallet signature
+    // 3. Verify cryptographic wallet signature
     await verifySignature(cleanWallet, signature, message);
 
     // 3. Role and wallet consistency checks. Verifiers may serve multiple elections,
@@ -977,9 +1015,22 @@ const verifyVerifierOtp = async (req, res, next) => {
     }
 
     const invite = await VerifierInvite.findOne({ token: inviteToken, status: 'pending' });
-    if (!invite || invite.expiresAt < new Date()) {
+    if (!invite) {
       res.status(400);
       throw new Error('Invalid or expired verifier invitation');
+    }
+
+    const election = await Election.findOne({ electionId: invite.electionId });
+    const regEndDate = election?.registrationPeriod?.endDate ? new Date(election.registrationPeriod.endDate) : null;
+    const isExpired = (regEndDate && new Date() > regEndDate) || (invite.expiresAt && new Date() > new Date(invite.expiresAt));
+
+    if (isExpired) {
+      if (invite.status !== 'expired') {
+        invite.status = 'expired';
+        await invite.save();
+      }
+      res.status(400);
+      throw new Error('This verifier invitation link has expired because the election registration period has ended.');
     }
 
     if (invite.email.toLowerCase() !== cleanEmail) {
@@ -1110,7 +1161,7 @@ const verifyVerifierOtp = async (req, res, next) => {
   }
 };
 
-// @desc    Initialize Super Admin self-registration & election wizard (sends OTP)
+// @desc    Initialize Election Administrator self-registration & election wizard (sends OTP)
 // @route   POST /api/auth/register-superadmin-init
 // @access  Public
 const registerSuperAdminInit = async (req, res, next) => {
@@ -1133,7 +1184,7 @@ const registerSuperAdminInit = async (req, res, next) => {
     // 1. Verify cryptographic proof of wallet ownership
     await verifySignature(cleanWallet, signature, message);
 
-    // 2. Role and wallet consistency checks. A Super Admin may create multiple
+    // 2. Role and wallet consistency checks. An Election Administrator may create multiple
     //    elections, but the same email cannot also be voter or verifier.
     const existingUserByEmail = await User.findOne({ email: cleanEmail });
     assertUserCanUseRole(existingUserByEmail, 'superadmin', res);
@@ -1141,7 +1192,7 @@ const registerSuperAdminInit = async (req, res, next) => {
     const voterRosterEntry = await VoterRoster.findOne({ email: cleanEmail });
     if (voterRosterEntry) {
       res.status(409);
-      throw new Error('This email is already reserved as a voter and cannot be used as a Super Admin.');
+      throw new Error('This email is already reserved as a voter and cannot be used as an Election Administrator.');
     }
 
     const verifierInvite = await VerifierInvite.findOne({
@@ -1150,7 +1201,7 @@ const registerSuperAdminInit = async (req, res, next) => {
     });
     if (verifierInvite) {
       res.status(409);
-      throw new Error('This email is already reserved as a Registration Verifier and cannot be used as a Super Admin.');
+      throw new Error('This email is already reserved as a Registration Verifier and cannot be used as an Election Administrator.');
     }
 
     if (existingUserByEmail && existingUserByEmail.walletAddress) {
@@ -1204,7 +1255,7 @@ const registerSuperAdminInit = async (req, res, next) => {
       expiresAt: new Date(Date.now() + 5 * 60 * 1000),
     });
 
-    await sendOTP({ email: cleanEmail, name: cleanName }, otp, 'Super Admin registration');
+    await sendOTP({ email: cleanEmail, name: cleanName }, otp, 'Election Administrator registration');
 
     res.json({
       message: 'OTP sent to your email. Verify to deploy election and complete registration.',
@@ -1216,7 +1267,7 @@ const registerSuperAdminInit = async (req, res, next) => {
   }
 };
 
-// @desc    Verify OTP, finalize Super Admin registration, and deploy election on-chain
+// @desc    Verify OTP, finalize Election Administrator registration, and deploy election on-chain
 // @route   POST /api/auth/verify-superadmin-otp
 // @access  Public
 const verifySuperAdminOtp = async (req, res, next) => {
@@ -1260,7 +1311,7 @@ const verifySuperAdminOtp = async (req, res, next) => {
     const cleanAddress = String(address || '').trim();
     if (!cleanName || !cleanPhone || !cleanAddress || !hashedPassword || !walletAddress) {
       res.status(400);
-      throw new Error('Super Admin registration session is missing required account details. Please restart registration.');
+      throw new Error('Election Administrator registration session is missing required account details. Please restart registration.');
     }
 
     const cleanElectionDetails = getRequiredElectionDetails(electionDetails, res);
@@ -1270,7 +1321,7 @@ const verifySuperAdminOtp = async (req, res, next) => {
     const voterRosterEntry = await VoterRoster.findOne({ email: cleanEmail });
     if (voterRosterEntry) {
       res.status(409);
-      throw new Error('This email is already reserved as a voter and cannot be used as a Super Admin.');
+      throw new Error('This email is already reserved as a voter and cannot be used as an Election Administrator.');
     }
 
     const verifierInvite = await VerifierInvite.findOne({
@@ -1279,7 +1330,7 @@ const verifySuperAdminOtp = async (req, res, next) => {
     });
     if (verifierInvite) {
       res.status(409);
-      throw new Error('This email is already reserved as a Registration Verifier and cannot be used as a Super Admin.');
+      throw new Error('This email is already reserved as a Registration Verifier and cannot be used as an Election Administrator.');
     }
 
     const walletOwner = await User.findOne({ walletAddress });
@@ -1342,7 +1393,7 @@ const verifySuperAdminOtp = async (req, res, next) => {
     }).catch((err) => console.error('[authController] sendElectionCreatedEmail failed:', err.message));
 
     res.status(201).json({
-      message: 'Super Admin account created and election successfully deployed on-chain!',
+      message: 'Election Administrator account created and election successfully deployed on-chain!',
       ...(await serializeSessionUserWithVerifierContacts(user, electionId)),
       token: generateToken(user._id, user.role, user.walletAddress),
       electionId: election.electionId,

@@ -19,6 +19,9 @@ import {
   ExternalLink,
   ChevronRight,
   RotateCw,
+  Copy,
+  Key,
+  X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useVoting } from '../context/VotingContext';
@@ -54,6 +57,8 @@ const ElectionSetup = () => {
 
   const [verifierName, setVerifierName] = useState('');
   const [verifierEmail, setVerifierEmail] = useState('');
+  const [issuedInviteModal, setIssuedInviteModal] = useState(null);
+  const [copiedCode, setCopiedCode] = useState(false);
 
   useEffect(() => {
     fetchSetupSummary();
@@ -128,10 +133,17 @@ const ElectionSetup = () => {
 
     try {
       setSubmitting(true);
-      await assignVerifier(electionId, {
+      const res = await assignVerifier(electionId, {
         name: verifierName.trim(),
         email: verifierEmail.trim().toLowerCase(),
       });
+      if (res?.inviteCode) {
+        setIssuedInviteModal({
+          name: verifierName.trim(),
+          email: verifierEmail.trim().toLowerCase(),
+          code: res.inviteCode,
+        });
+      }
       setVerifierName('');
       setVerifierEmail('');
       fetchSetupSummary();
@@ -146,7 +158,7 @@ const ElectionSetup = () => {
     try {
       setSubmitting(true);
       await openRegistration(electionId);
-      toast.success('Registration is now open! Redirecting to Super Admin Console...');
+      toast.success('Registration is now open! Redirecting to Election Administrator Console...');
       setTimeout(() => navigate(`/elections/${electionId}/admin`), 1500);
     } catch (err) {
       console.error('Open registration error:', err);
@@ -351,20 +363,20 @@ const ElectionSetup = () => {
               {/* Required format info box */}
               <div className="mb-4 p-3 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/40">
                 <p className="text-[11px] font-bold text-indigo-700 dark:text-indigo-300 mb-2 flex items-center gap-1.5">
-                  <FileSpreadsheet className="w-3.5 h-3.5" /> Required Excel Format — all 5 columns mandatory
+                  <FileSpreadsheet className="w-3.5 h-3.5" /> Required Excel Format — all 6 columns mandatory
                 </p>
                 <div className="overflow-x-auto">
                   <table className="w-full text-[10px] border-collapse">
                     <thead>
                       <tr className="bg-indigo-100 dark:bg-indigo-900/50">
-                        {['email', 'Full Name', 'Employee ID', 'Citizenship Number', 'Date of Birth'].map(col => (
+                        {['email', 'Full Name', 'Employee ID', 'Citizenship Number', 'Date of Birth', 'Address'].map(col => (
                           <th key={col} className="px-2 py-1 text-left font-bold text-indigo-800 dark:text-indigo-200 border border-indigo-200 dark:border-indigo-700 whitespace-nowrap">{col}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
                       <tr className="opacity-60">
-                        {['voter@org.np', 'Ram Prasad Shrestha', 'EMP-2024-001', '1234-5678', '1990-04-15'].map((ex, i) => (
+                        {['voter@org.np', 'Ram Prasad Shrestha', 'EMP-2024-001', '1234-5678', '1990-04-15', 'Kathmandu, Nepal'].map((ex, i) => (
                           <td key={i} className="px-2 py-1 border border-indigo-200 dark:border-indigo-700 italic" style={{ color: 'var(--text-color)' }}>{ex}</td>
                         ))}
                       </tr>
@@ -372,7 +384,7 @@ const ElectionSetup = () => {
                   </table>
                 </div>
                 <p className="text-[10px] text-indigo-600 dark:text-indigo-400 mt-2">
-                  ⚠ Column names must match exactly (case-sensitive). Date of Birth must be <strong>YYYY-MM-DD</strong>. All rows must have all five fields — any row with a missing or invalid field will reject the entire upload.
+                  ⚠ Column names must match exactly (case-sensitive). Date of Birth must be <strong>YYYY-MM-DD</strong>. All rows must have all six fields — any row with a missing or invalid field will reject the entire upload.
                 </p>
               </div>
 
@@ -540,6 +552,75 @@ const ElectionSetup = () => {
 
         </div>
       </main>
+
+      {/* Modal: One-Time Verifier Invitation Code Display */}
+      {issuedInviteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+          <div
+            className="max-w-md w-full rounded-2xl border p-6 shadow-2xl relative transition-colors duration-300"
+            style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--border-color)' }}
+          >
+            <button
+              onClick={() => {
+                setIssuedInviteModal(null);
+                setCopiedCode(false);
+              }}
+              className="absolute top-4 right-4 p-1 rounded-lg opacity-60 hover:opacity-100 transition-opacity"
+              style={{ color: 'var(--text-color)' }}
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="w-12 h-12 rounded-2xl bg-purple-100 dark:bg-purple-950 text-purple-600 dark:text-purple-400 flex items-center justify-center mb-4">
+              <Key className="w-6 h-6" />
+            </div>
+
+            <h3 className="text-xl font-bold mb-1" style={{ color: 'var(--text-color)' }}>
+              Verifier Invitation Code Generated
+            </h3>
+            <p className="text-xs opacity-70 mb-4" style={{ color: 'var(--text-color)' }}>
+              Invitation link sent to <strong>{issuedInviteModal.email}</strong> ({issuedInviteModal.name}).
+            </p>
+
+            <div className="p-4 rounded-xl bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 text-center mb-4">
+              <span className="block text-[11px] font-bold uppercase tracking-wider text-purple-700 dark:text-purple-300 mb-1">
+                One-Time Invitation Code
+              </span>
+              <div className="flex items-center justify-center gap-3">
+                <span className="text-2xl font-mono font-extrabold tracking-widest text-purple-900 dark:text-purple-100">
+                  {issuedInviteModal.code}
+                </span>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(issuedInviteModal.code);
+                    setCopiedCode(true);
+                    toast.success('Invitation code copied to clipboard!');
+                    setTimeout(() => setCopiedCode(false), 3000);
+                  }}
+                  className="p-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white transition-all text-xs flex items-center gap-1 font-bold shadow-md"
+                >
+                  {copiedCode ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  {copiedCode ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-300 mb-6">
+              <strong>SECURITY NOTICE:</strong> This invitation code is <em>not</em> included in the invitation email. You must securely share this code with <strong>{issuedInviteModal.name}</strong> via a trusted channel (e.g. secure message, phone, or in person).
+            </div>
+
+            <button
+              onClick={() => {
+                setIssuedInviteModal(null);
+                setCopiedCode(false);
+              }}
+              className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 rounded-xl text-sm transition-all"
+            >
+              Done / Close
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -77,7 +77,7 @@ const sendStatusNotificationEmail = async (user, status, reason = '') => {
       subject = 'Registration Submitted';
       bodyText = `Your registration has been successfully submitted and is currently under review by the registration verifier. You will receive another email once your registration has been approved, rejected, or blocked.`;
       headerColor = '#3b82f6';
-    } else if (normalizedStatus === 'approved' || normalizedStatus === 'registered') {
+    } else if (normalizedStatus === 'registered') {
       subject = 'Registration Approved';
       bodyText = `Congratulations! Your registration has been approved. You can now log in to the system and participate in the election once voting begins.`;
       headerColor = '#10b981';
@@ -192,15 +192,20 @@ const sendVerifierInvitationEmail = async ({ email, name, electionTitle, inviteT
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 10px;">
           <h2 style="color: #4F46E5; text-align: center;">Verifier Onboarding Invitation</h2>
           <p>Hello <strong>${name}</strong>,</p>
-          <p>You have been invited by the Super Admin to serve as an official <strong>Registration Verifier</strong> for <strong>${electionTitle}</strong>.</p>
-          <p>Please click the button below to complete your verifier registration and link your wallet address:</p>
-          <div style="text-align: center; margin: 30px 0;">
+          <p>You have been invited by the Election Administrator to serve as an official <strong>Registration Verifier</strong> for <strong>${electionTitle}</strong>.</p>
+          <p>Please click the button below to start your verifier registration:</p>
+          <div style="text-align: center; margin: 25px 0;">
             <a href="${inviteUrl}" style="background-color: #4F46E5; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: bold; display: inline-block;">Accept Verifier Invitation</a>
           </div>
           <p>Or copy and paste this link into your browser:</p>
           <p style="word-break: break-all; color: #6366F1;"><a href="${inviteUrl}">${inviteUrl}</a></p>
+          <div style="background-color: #f3f4f6; padding: 12px 16px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #4F46E5;">
+            <p style="margin: 0; font-size: 13px; color: #374151;">
+              <strong>Security Notice:</strong> Your secret <strong>One-Time Invitation Code</strong> is <em>not</em> included in this email. You must request this code directly from your Election Administrator via a trusted channel (secure message, phone, or in person).
+            </p>
+          </div>
           <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-          <p style="font-size: 12px; color: #888; text-align: center;">This invitation is unique to your email address. Do not share or forward this link.</p>
+          <p style="font-size: 12px; color: #888; text-align: center;">This invitation link is valid only until the election registration period ends. Do not share or forward this email.</p>
         </div>
       `,
     };
@@ -215,7 +220,7 @@ const sendVerifierInvitationEmail = async ({ email, name, electionTitle, inviteT
 };
 
 /**
- * Send "Election Created Successfully" confirmation email to the Super Admin.
+ * Send "Election Created Successfully" confirmation email to the Election Administrator.
  * Called after verifySuperAdminOtp deploys the election on-chain.
  * @param {Object} params - { email, name, electionTitle, electionId, txHash }
  */
@@ -237,7 +242,7 @@ const sendElectionCreatedEmail = async ({ email, name, electionTitle, electionId
             <table style="width: 100%; font-size: 14px; color: #065f46;">
               <tr><td style="padding: 4px 0; font-weight: bold;">Election Title:</td><td>${electionTitle}</td></tr>
               <tr><td style="padding: 4px 0; font-weight: bold;">Election ID:</td><td>#${electionId}</td></tr>
-              <tr><td style="padding: 4px 0; font-weight: bold;">Role:</td><td>Super Admin</td></tr>
+              <tr><td style="padding: 4px 0; font-weight: bold;">Role:</td><td>Election Administrator</td></tr>
               ${txHash ? `<tr><td style="padding: 4px 0; font-weight: bold;">Tx Hash:</td><td style="font-family: monospace; font-size: 11px; word-break: break-all;">${txHash}</td></tr>` : ''}
             </table>
           </div>

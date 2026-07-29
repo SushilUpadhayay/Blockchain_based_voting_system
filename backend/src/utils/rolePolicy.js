@@ -1,8 +1,7 @@
 const ROLE_LABELS = {
   voter: 'Voter',
   verifier: 'Registration Verifier',
-  superadmin: 'Super Admin',
-  admin: 'Administrator',
+  superadmin: 'Election Administrator',
 };
 
 const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
@@ -20,10 +19,6 @@ const getUserRoleKinds = (user) => {
 
   if ((user.elections || []).length > 0 || user.citizenshipNumber || user.role === 'user') {
     roles.add('voter');
-  }
-
-  if ((user.role === 'admin' || user.role === 'verifier') && roles.size === 0) {
-    roles.add('admin');
   }
 
   return [...roles];

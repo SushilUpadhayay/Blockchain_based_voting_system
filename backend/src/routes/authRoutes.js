@@ -45,7 +45,7 @@ router.post('/verify-vote-otp', protect, authLimiter, validateVerifyVoteOtp, ver
 router.post('/register-verifier-init', authLimiter, validateVerifierRegisterInit, registerVerifierInit);
 router.post('/verify-verifier-otp', authLimiter, validateVerifyVerifierOtp, verifyVerifierOtp);
 
-// Super Admin registration & wizard routes (public)
+// Election Administrator registration & wizard routes (public)
 router.post('/register-superadmin-init', authLimiter, validateSuperAdminRegisterInit, registerSuperAdminInit);
 router.post('/verify-superadmin-otp', authLimiter, validateVerifySuperAdminOtp, verifySuperAdminOtp);
 

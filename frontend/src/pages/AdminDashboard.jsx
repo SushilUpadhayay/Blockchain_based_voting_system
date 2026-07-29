@@ -153,7 +153,7 @@ const AdminDashboard = () => {
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-6 border-b border-black/5 dark:border-white/5">
           <div>
             <span className="text-xs font-mono font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-950 px-2.5 py-1 rounded">
-              Super Admin Console (Election #{electionId})
+              Election Administrator Console (Election #{electionId})
             </span>
             <h1 className="text-3xl font-extrabold mt-1" style={{ color: 'var(--text-color)' }}>
               {electionInfo?.title || `Election #${electionId}`}

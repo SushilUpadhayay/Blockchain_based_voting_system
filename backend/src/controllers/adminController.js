@@ -8,6 +8,7 @@ const {
   getElectionStatusOnChain,
 } = require('../services/blockchainService');
 const { sendStatusNotificationEmail } = require('../services/otpService');
+const { compareVoterData } = require('../services/verificationComparisonService');
 
 /**
  * Helper to ensure the election has not started (reads MongoDB, no RPC).
@@ -36,9 +37,38 @@ const scopeUserToElection = (user, electionId) => {
   };
 };
 
+/**
+ * Attaches dynamically computed verification objects to an array of scoped user objects.
+ * Batch queries matching Excel roster records for efficiency.
+ */
+const attachVerificationToUsers = async (users, electionId) => {
+  if (!users || users.length === 0) return [];
+
+  const eId = Number(electionId);
+  const emails = users.map((u) => u.email?.toLowerCase()).filter(Boolean);
+
+  const rosterRecords = await VoterRoster.find({
+    electionId: eId,
+    email: { $in: emails },
+  });
+
+  const rosterMap = new Map(
+    rosterRecords.map((r) => [r.email.toLowerCase(), r])
+  );
+
+  return users.map((user) => {
+    const userObj = scopeUserToElection(user, eId);
+    const rosterRecord = rosterMap.get(user.email?.toLowerCase()) || null;
+    const ocrData = (user.ocrData && user.ocrData.ocrSuccess) ? user.ocrData : null;
+
+    userObj.verification = compareVoterData(userObj, rosterRecord, ocrData);
+    return userObj;
+  });
+};
+
 // @desc    Get all verified users waiting for admin/verifier approval for a specific election
 // @route   GET /api/admin/elections/:electionId/pending-users
-// @access  Private/RegistrationVerifier/SuperAdmin
+// @access  Private/RegistrationVerifier/Election Administrator
 const getPendingUsers = async (req, res, next) => {
   try {
     const electionId = Number(req.params.electionId);
@@ -49,7 +79,8 @@ const getPendingUsers = async (req, res, next) => {
       documentPath: { $ne: 'pending_upload' },
     }).select('-otp -otpExpires');
 
-    res.json(pendingUsers.map((user) => scopeUserToElection(user, electionId)));
+    const result = await attachVerificationToUsers(pendingUsers, electionId);
+    res.json(result);
   } catch (error) {
     next(error);
   }
@@ -57,7 +88,7 @@ const getPendingUsers = async (req, res, next) => {
 
 // @desc    Approve a user for a specific election (blockchain tx done by MetaMask on frontend)
 // @route   POST /api/admin/elections/:electionId/approve/:id
-// @access  Private/RegistrationVerifier/SuperAdmin
+// @access  Private/RegistrationVerifier/Election Administrator
 const approveUser = async (req, res, next) => {
   try {
     const electionId = Number(req.params.electionId);
@@ -121,7 +152,7 @@ const approveUser = async (req, res, next) => {
     );
 
     // Send "Registration Approved" status email
-    sendStatusNotificationEmail(user, 'approved').catch((err) => {
+    sendStatusNotificationEmail(user, 'registered').catch((err) => {
       console.error('Failed to send approval status email:', err);
     });
 
@@ -137,7 +168,7 @@ const approveUser = async (req, res, next) => {
 
 // @desc    Reject a user for a specific election
 // @route   POST /api/admin/elections/:electionId/reject/:id
-// @access  Private/RegistrationVerifier/SuperAdmin
+// @access  Private/RegistrationVerifier/Election Administrator
 const rejectUser = async (req, res, next) => {
   try {
     const electionId = Number(req.params.electionId);
@@ -185,7 +216,7 @@ const rejectUser = async (req, res, next) => {
 
 // @desc    Block a user permanently for a specific election
 // @route   POST /api/admin/elections/:electionId/block/:id
-// @access  Private/RegistrationVerifier/SuperAdmin
+// @access  Private/RegistrationVerifier/Election Administrator
 const blockUser = async (req, res, next) => {
   try {
     const electionId = Number(req.params.electionId);
@@ -227,14 +258,15 @@ const blockUser = async (req, res, next) => {
 
 // @desc    Get all registered users for an election
 // @route   GET /api/admin/elections/:electionId/registered-users
-// @access  Private/RegistrationVerifier/SuperAdmin
+// @access  Private/RegistrationVerifier/Election Administrator
 const getRegisteredUsers = async (req, res, next) => {
   try {
     const electionId = Number(req.params.electionId);
     const registeredUsers = await User.find({
       elections: { $elemMatch: { electionId, status: 'registered' } },
     });
-    res.json(registeredUsers.map((user) => scopeUserToElection(user, electionId)));
+    const result = await attachVerificationToUsers(registeredUsers, electionId);
+    res.json(result);
   } catch (error) {
     next(error);
   }
@@ -242,7 +274,7 @@ const getRegisteredUsers = async (req, res, next) => {
 
 // @desc    Sync voter to blockchain for electionId if missing
 // @route   POST /api/admin/elections/:electionId/sync-voter/:id
-// @access  Private/RegistrationVerifier/SuperAdmin
+// @access  Private/RegistrationVerifier/Election Administrator
 const syncVoter = async (req, res, next) => {
   try {
     const electionId = Number(req.params.electionId);

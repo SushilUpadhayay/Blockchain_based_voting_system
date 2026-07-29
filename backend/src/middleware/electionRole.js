@@ -10,7 +10,7 @@ const getElectionRole = (user, electionId) => {
 };
 
 /**
- * Middleware: Enforces that the caller's wallet matches the election's superAdmin.
+ * Middleware: Enforces that the caller's wallet matches the election's Election Administrator.
  */
 const isSuperAdmin = async (req, res, next) => {
   try {
@@ -36,14 +36,14 @@ const isSuperAdmin = async (req, res, next) => {
     }
 
     res.status(403);
-    return next(new Error('Only the election Super Admin is authorized to perform this action'));
+    return next(new Error('Only the Election Administrator is authorized to perform this action'));
   } catch (error) {
     return next(error);
   }
 };
 
 /**
- * Middleware: Enforces that the caller's wallet is either superAdmin OR an assigned Registration Verifier.
+ * Middleware: Enforces that the caller's wallet is either Election Administrator OR an assigned Registration Verifier.
  */
 const isRegistrationVerifier = async (req, res, next) => {
   try {
@@ -74,7 +74,7 @@ const isRegistrationVerifier = async (req, res, next) => {
     }
 
     res.status(403);
-    return next(new Error('Only the Super Admin or an assigned Registration Verifier is allowed'));
+    return next(new Error('Only the Election Administrator or an assigned Registration Verifier is allowed'));
   } catch (error) {
     return next(error);
   }

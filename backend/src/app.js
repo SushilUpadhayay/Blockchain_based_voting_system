@@ -10,7 +10,7 @@ const electionRoutes = require('./routes/electionRoutes');
 
 const app = express();
 
-// ── CORS ──────────────────────────────────────────────────────────────────────
+// CORS
 // Restrict to the Vite dev server origin in development.
 // In production, set FRONTEND_ORIGIN env var to your deployed frontend URL.
 const allowedOrigins = [
@@ -31,21 +31,21 @@ app.use(
   })
 );
 
-// ── Body Parsers ──────────────────────────────────────────────────────────────
+// Body Parsers 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ── Static Files ──────────────────────────────────────────────────────────────
+// Static Files 
 // Serve uploaded documents (for dev/admin review purposes only)
 app.use('/uploads', express.static('uploads'));
 
-// ── Routes ────────────────────────────────────────────────────────────────────
+// Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/elections', electionRoutes);
 
-// ── Error Handler ─────────────────────────────────────────────────────────────
+// Error Handler
 app.use(errorHandler);
 
 module.exports = app;

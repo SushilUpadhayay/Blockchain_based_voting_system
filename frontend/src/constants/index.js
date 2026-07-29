@@ -19,7 +19,6 @@ export const ROUTES = {
   ELECTION_VERIFIER: '/elections/:electionId/verifier',
   VOTING: '/elections/:electionId/voting',
   RESULTS: '/elections/:electionId/results',
-  ADMIN: '/admin',
 };
 
 export const DASHBOARD_CONFIG = {
@@ -41,7 +40,9 @@ export const DASHBOARD_CONFIG = {
 };
 
 export const getDashboardConfig = (user) => {
-  if (user?.role === 'admin' || user?.status === USER_STATUS.REGISTERED) {
+  // Admin-role users (Election Administrators and Verifiers) link to the Election Portal.
+  // Registered voters also link to the Election Portal.
+  if ((user?.adminRoles || []).length > 0 || user?.status === USER_STATUS.REGISTERED) {
     return DASHBOARD_CONFIG.ADMIN;
   }
   return DASHBOARD_CONFIG.STATUS;

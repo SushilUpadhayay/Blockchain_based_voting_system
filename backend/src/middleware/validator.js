@@ -170,6 +170,10 @@ const validateVerifierRegisterInit = [
     .trim()
     .notEmpty().withMessage('Verifier invitation token is required'),
 
+  check('inviteCode')
+    .trim()
+    .notEmpty().withMessage('One-time invitation code is required'),
+
   check('name')
     .trim()
     .notEmpty().withMessage('Verifier full name is required')
@@ -223,7 +227,7 @@ const validateVerifyVerifierOtp = [
 const validateSuperAdminRegisterInit = [
   check('name')
     .trim()
-    .notEmpty().withMessage('Super Admin full name is required')
+    .notEmpty().withMessage('Election Administrator full name is required')
     .isLength({ min: 2, max: 100 }).withMessage('Name must be between 2 and 100 characters'),
 
   check('email')
@@ -234,12 +238,12 @@ const validateSuperAdminRegisterInit = [
 
   check('phone')
     .trim()
-    .notEmpty().withMessage('Super Admin phone number is required')
+    .notEmpty().withMessage('Election Administrator phone number is required')
     .isLength({ min: 7, max: 30 }).withMessage('Phone number must be between 7 and 30 characters'),
 
   check('address')
     .trim()
-    .notEmpty().withMessage('Super Admin address is required')
+    .notEmpty().withMessage('Election Administrator address is required')
     .isLength({ min: 5, max: 300 }).withMessage('Address must be between 5 and 300 characters'),
 
   check('password')
